@@ -475,6 +475,34 @@ class SupabaseService {
     return true;
   }
 
+  /// Update coins in-memory and broadcast immediately to all listeners
+  void updateLocalCoinsInMemory(int newBalance) {
+    if (_currentProfile == null) return;
+    final validBalance = newBalance < 0 ? 0 : newBalance;
+    _currentProfile = _currentProfile!.copyWith(coins: validBalance);
+    _profileController.add(_currentProfile);
+  }
+
+  /// Update and persist exact coins balance to DB and SharedPreferences
+  Future<bool> updateCoinsBalance(int newBalance) async {
+    if (_currentProfile == null) return false;
+    final validBalance = newBalance < 0 ? 0 : newBalance;
+
+    _currentProfile = _currentProfile!.copyWith(coins: validBalance);
+    _profileController.add(_currentProfile);
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        await _client!.from('profiles').update({'coins': validBalance}).eq('id', _currentProfile!.id);
+      } catch (_) {}
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('local_user_coins', validBalance);
+
+    return true;
+  }
+
   /// Deduct coins (e.g. for +15s time boost or gender filter)
   Future<bool> deductCoins(int amount) async {
     if (_currentProfile == null || _currentProfile!.coins < amount) {
@@ -482,19 +510,7 @@ class SupabaseService {
     }
 
     final newBalance = _currentProfile!.coins - amount;
-    _currentProfile = _currentProfile!.copyWith(coins: newBalance);
-
-    if (_client != null && AppConfig.isSupabaseConfigured) {
-      try {
-        await _client!.from('profiles').update({'coins': newBalance}).eq('id', _currentProfile!.id);
-      } catch (_) {}
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('local_user_coins', newBalance);
-
-    _profileController.add(_currentProfile);
-    return true;
+    return updateCoinsBalance(newBalance);
   }
 
   /// Submit report for moderation

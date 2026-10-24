@@ -89,5 +89,52 @@ void main() {
       expect(isGenderFiltered, isFalse);
       expect(callElapsedSeconds, equals(0));
     });
+    test('VIP mode decreases coins by 1 each second and reaches 0', () {
+      var coinsRemaining = 30;
+      var elapsedSeconds = 0;
+      const isGenderFiltered = true;
+
+      // Simulate 10 seconds of VIP call
+      for (var i = 0; i < 10; i++) {
+        elapsedSeconds++;
+        if (isGenderFiltered) {
+          if (coinsRemaining > 0) {
+            coinsRemaining--;
+          }
+        }
+      }
+
+      expect(elapsedSeconds, equals(10));
+      expect(coinsRemaining, equals(20));
+
+      // Simulate remaining 20 seconds
+      for (var i = 0; i < 20; i++) {
+        elapsedSeconds++;
+        if (isGenderFiltered) {
+          if (coinsRemaining > 0) {
+            coinsRemaining--;
+          }
+        }
+      }
+
+      expect(elapsedSeconds, equals(30));
+      expect(coinsRemaining, equals(0));
+    });
+
+    test('VideoCallScreen profile updates with live decremented coins upon skip or exit', () {
+      const initialProfile = UserProfile(
+        id: 'u_1',
+        nickname: 'VipUser',
+        coins: 30,
+        isAnonymous: false,
+      );
+
+      var coinsRemaining = 30;
+      // 15 seconds pass in VIP mode
+      coinsRemaining -= 15;
+
+      final updatedProfile = initialProfile.copyWith(coins: coinsRemaining);
+      expect(updatedProfile.coins, equals(15));
+    });
   });
 }

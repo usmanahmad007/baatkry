@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/user_profile.dart';
 import '../../services/matchmaking_service.dart';
+import '../../services/supabase_service.dart';
 import '../call/video_call_screen.dart';
 
 class RadarScreen extends StatefulWidget {
@@ -43,7 +44,7 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
           MaterialPageRoute(
             builder: (_) => VideoCallScreen(
               matchResult: result,
-              myProfile: widget.profile,
+              myProfile: SupabaseService.instance.currentProfile ?? widget.profile,
               genderFilter: widget.genderFilter,
             ),
           ),

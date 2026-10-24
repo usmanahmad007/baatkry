@@ -42,6 +42,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   StreamSubscription<VideoTrack?>? _remoteTrackSub;
   StreamSubscription<ChatMessage>? _chatSub;
   StreamSubscription<void>? _peerDisconnectedSub;
+  StreamSubscription<UserProfile?>? _profileSub;
 
   VideoTrack? _remoteVideoTrack;
   LocalVideoTrack? _localVideoTrack;
@@ -66,13 +67,25 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     super.initState();
     final filter = widget.genderFilter.toLowerCase().trim();
     final requestedVip = filter.isNotEmpty && filter != 'everyone' && filter != 'unspecified';
-    final hasCoins = widget.myProfile.coins > 0 || widget.myProfile.isVip;
+    final initialCoins = SupabaseService.instance.currentProfile?.coins ?? widget.myProfile.coins;
+    final hasCoins = initialCoins > 0 || widget.myProfile.isVip;
     final isVip = requestedVip && hasCoins;
 
     _activeGenderFilter = isVip ? filter : 'everyone';
     _isGenderFiltered = isVip;
-    _coinsRemaining = widget.myProfile.coins;
+    _coinsRemaining = initialCoins;
     _guestTotalSecondsUsed = GuestSessionService.instance.cachedSecondsUsed;
+
+    // Listen to real-time profile updates (e.g. coin purchases in ShopModal)
+    _profileSub = SupabaseService.instance.profileStream.listen((p) {
+      if (mounted && p != null) {
+        if (p.coins > _coinsRemaining) {
+          setState(() {
+            _coinsRemaining = p.coins;
+          });
+        }
+      }
+    });
 
     // Check if guest trial already exhausted before call starts
     if (_isGuest && GuestSessionService.instance.isTrialExhausted) {
@@ -130,10 +143,15 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           // Specific Gender: use coins time only (1 coin = 1 second)
           if (_coinsRemaining > 0) {
             _coinsRemaining--;
-            if (_coinsRemaining % 10 == 0 || _coinsRemaining == 0) {
-              SupabaseService.instance.deductCoins(10);
+            // Immediately sync in-memory so other widgets/screens show live reduction
+            SupabaseService.instance.updateLocalCoinsInMemory(_coinsRemaining);
+
+            // Persist to database/storage every 5 seconds or when hitting 0
+            if (_coinsRemaining % 5 == 0 || _coinsRemaining == 0) {
+              SupabaseService.instance.updateCoinsBalance(_coinsRemaining);
             }
           } else {
+            SupabaseService.instance.updateCoinsBalance(0);
             _onGenderCoinsExhausted();
           }
         } else {
@@ -341,6 +359,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   }
 
   void _switchToFreeRandom() {
+    // Flush exact remaining coins to storage
+    SupabaseService.instance.updateCoinsBalance(_coinsRemaining);
+
     // Switch to free random, reset time to 0, and RELOAD session
     setState(() {
       _activeGenderFilter = 'everyone';
@@ -721,6 +742,10 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   @override
   void dispose() {
     _callTimer?.cancel();
+    _profileSub?.cancel();
+    if (_isGenderFiltered) {
+      SupabaseService.instance.updateCoinsBalance(_coinsRemaining);
+    }
     if (_isGuest) {
       GuestSessionService.instance.recordSecondsUsed(_guestTotalSecondsUsed);
     }
@@ -734,6 +759,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   }
 
   void _onSkipToNext() async {
+    if (_isGenderFiltered) {
+      await SupabaseService.instance.updateCoinsBalance(_coinsRemaining);
+    }
     await _liveKit.disconnect();
     if (!mounted) return;
 
@@ -746,10 +774,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       }
     }
 
+    final currentProf = SupabaseService.instance.currentProfile ?? widget.myProfile;
+    final updatedProf = currentProf.copyWith(coins: _coinsRemaining);
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => RadarScreen(
-          profile: widget.myProfile,
+          profile: updatedProf,
           genderFilter: _activeGenderFilter,
         ),
       ),
@@ -912,7 +943,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               const SizedBox(width: 10),
               _buildNavPill(
                 icon: Icons.monetization_on_rounded,
-                label: '${widget.myProfile.coins} Coins',
+                label: '$_coinsRemaining Coins',
                 accentColor: AppColors.coinGold,
                 onTap: () => ShopModal.show(context),
               ),
