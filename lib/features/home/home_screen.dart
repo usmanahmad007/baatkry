@@ -48,37 +48,16 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
 
-    _checkAndInitPermissions();
-
-    // Verify 18+ Age Consent Gate
+    // Check only if previously blocked as underage (no popups on website load)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final isBlocked = await AgeConsentModal.isBlockedUnderage();
       if (isBlocked && mounted) {
         AgeConsentModal.showUnderageBlockedDialog(context);
-        return;
-      }
-      final isVerified = await AgeConsentModal.isAgeVerified();
-      if (!isVerified && mounted) {
-        AgeConsentModal.checkAndShow(context, onVerified: () {});
       }
     });
   }
 
-  /// Request permission only one time. Never bother the user repeatedly!
-  Future<void> _checkAndInitPermissions() async {
-    final hasRequested = PermissionService.instance.hasRequested;
-
-    if (!hasRequested) {
-      // Defer slightly until UI mounts
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showOneTimePermissionDialog();
-      });
-    } else {
-      _startCameraPreview();
-    }
-  }
-
-  void _showOneTimePermissionDialog() {
+  void _showOneTimePermissionDialog({required VoidCallback onAllowed}) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -139,6 +118,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          ),
           Container(
             decoration: BoxDecoration(
               gradient: AppColors.primaryGradient,
@@ -160,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.of(ctx).pop();
                 PermissionService.instance.markPermissionHandled(granted: true);
-                _startCameraPreview();
+                onAllowed();
               },
               child: const Text('Allow & Continue', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
             ),
@@ -168,13 +151,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _startCameraPreview() async {
-    final track = await LiveKitService.instance.startLocalPreview();
-    if (mounted) {
-      setState(() => _previewTrack = track);
-    }
   }
 
   @override
@@ -185,8 +161,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onStartMatching() {
+    // 1. Consent Gate: Prompt user to verify 18+ and enter Date of Birth (from birth certificate)
     AgeConsentModal.checkAndShow(context, onVerified: () async {
-      // If user is in guest mode, check remaining talk time (max 3 minutes total)
+      // 2. Check guest trial talk time limit
       final isGuest = _profile?.isAnonymous ?? true;
       if (isGuest) {
         final remaining = await GuestSessionService.instance.getGuestSecondsRemaining();
@@ -197,17 +174,37 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (!mounted) return;
-      EulaModal.checkAndShow(context, onAccepted: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => RadarScreen(
-              profile: _profile ?? const UserProfile(id: 'temp_guest'),
-              genderFilter: _selectedGenderFilter,
-            ),
-          ),
-        );
-      });
+
+      // 3. One-time Camera & Mic Permission check right before moving to chat
+      _checkPermissionAndProceed();
     });
+  }
+
+  void _checkPermissionAndProceed() {
+    final hasRequested = PermissionService.instance.hasRequested;
+
+    if (!hasRequested) {
+      // Prompt permission only once when entering chat
+      _showOneTimePermissionDialog(
+        onAllowed: () {
+          _proceedToMatchingScreen();
+        },
+      );
+    } else {
+      // Already granted, move directly to matching without asking again
+      _proceedToMatchingScreen();
+    }
+  }
+
+  void _proceedToMatchingScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RadarScreen(
+          profile: _profile ?? const UserProfile(id: 'temp_guest'),
+          genderFilter: _selectedGenderFilter,
+        ),
+      ),
+    );
   }
 
   void _showGuestTrialExhaustedDialog() {
@@ -773,13 +770,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   colors: [Color(0xFF14172B), Color(0xFF0F1222)],
                 ),
               ),
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.videocam_rounded, size: 48, color: AppColors.brandIndigo),
-                    SizedBox(height: 8),
-                    Text('Camera Active', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandIndigo.withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.videocam_rounded, size: 44, color: AppColors.brandPink),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Ready to Video Chat',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Tap Start Video Chat to allow camera & connect',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    ),
                   ],
                 ),
               ),
@@ -796,37 +808,45 @@ class _HomeScreenState extends State<HomeScreen> {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Colors.white12),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.circle, color: AppColors.success, size: 8),
-                  SizedBox(width: 6),
-                  Text('Camera Active', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                  Icon(
+                    Icons.circle,
+                    color: _previewTrack != null ? AppColors.success : AppColors.brandCyan,
+                    size: 8,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _previewTrack != null ? 'Camera Active' : 'Ready to Connect',
+                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
             ),
           ),
 
-          // Top Right Camera Flip Button
-          Positioned(
-            top: 14,
-            right: 14,
-            child: InkWell(
-              onTap: () async {
-                await LiveKitService.instance.flipCamera();
-                setState(() {});
-              },
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white12),
+          // Top Right Camera Flip Button (Only when preview is active)
+          if (_previewTrack != null)
+            Positioned(
+              top: 14,
+              right: 14,
+              child: InkWell(
+                onTap: () async {
+                  await LiveKitService.instance.flipCamera();
+                  setState(() {});
+                },
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: const Icon(Icons.flip_camera_ios_rounded, color: Colors.white, size: 18),
                 ),
-                child: const Icon(Icons.flip_camera_ios_rounded, color: Colors.white, size: 18),
               ),
             ),
-          ),
         ],
       ),
     );

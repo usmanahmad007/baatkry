@@ -173,6 +173,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(AgeConsentModal.keyAgeVerified, true);
     await prefs.setInt(AgeConsentModal.keyUserAge, _calculatedAge!);
+    await prefs.setBool('eula_accepted', true);
 
     await SupabaseService.instance.updateProfile(age: _calculatedAge);
 
