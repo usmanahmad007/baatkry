@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/supabase_service.dart';
+import '../moderation/age_consent_modal.dart';
 
 class AuthModal extends StatefulWidget {
   final VoidCallback? onAuthSuccess;
@@ -25,6 +26,15 @@ class _AuthModalState extends State<AuthModal> {
   String? _errorMessage;
 
   Future<void> _handleGoogleSignIn() async {
+    final isBlocked = await AgeConsentModal.isBlockedUnderage();
+    if (isBlocked) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        AgeConsentModal.showUnderageBlockedDialog(context);
+      }
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -39,21 +49,36 @@ class _AuthModalState extends State<AuthModal> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: AppColors.success,
-            content: Text('Signed in with Google! Coin shop & VIP unlocked 🎉'),
+            content: Text('Signed in with Google! Age 18+ verified 🎉'),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
+        final errorStr = e.toString().replaceAll('Exception: ', '');
         setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _errorMessage = errorStr;
           _isLoading = false;
         });
+
+        if (errorStr.contains('Underage') || errorStr.contains('18')) {
+          Navigator.of(context).pop();
+          AgeConsentModal.showUnderageBlockedDialog(context);
+        }
       }
     }
   }
 
   Future<void> _handleAnonymousSignIn() async {
+    final isBlocked = await AgeConsentModal.isBlockedUnderage();
+    if (isBlocked) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        AgeConsentModal.showUnderageBlockedDialog(context);
+      }
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -166,6 +191,28 @@ class _AuthModalState extends State<AuthModal> {
             ),
             const SizedBox(height: 16),
           ],
+
+          // 18+ Age Verification Requirement Indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.brandIndigo.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.brandIndigo.withOpacity(0.4)),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('🔞', style: TextStyle(fontSize: 15)),
+                SizedBox(width: 8),
+                Text(
+                  '18+ Only: Age verified via Google / Gmail account',
+                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
 
           // 1. Primary Option: Google Sign-In
           ElevatedButton(

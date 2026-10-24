@@ -13,7 +13,7 @@ This step-by-step guide walks you through enabling **Google OAuth Sign-In** for 
    - App Name: **Baatkry**
    - User support email: Select your email (`abbasusman753@gmail.com`)
    - Developer contact email: Enter your email
-   - Scopes: Add `.../auth/userinfo.email`, `.../auth/userinfo.profile`, `openid`
+   - Scopes: Add `.../auth/userinfo.email`, `.../auth/userinfo.profile`, `openid`, and `.../auth/user.birthday.read` (for 18+ age verification)
    - Save and Continue.
 4. Go to **Credentials** -> Click **+ CREATE CREDENTIALS** -> Select **OAuth client ID**.
 5. Select **Application type**: **Web application**.

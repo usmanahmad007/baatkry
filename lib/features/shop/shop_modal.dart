@@ -3,6 +3,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/coin_package.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
+import '../moderation/age_consent_modal.dart';
 
 class ShopModal extends StatefulWidget {
   const ShopModal({super.key});
@@ -24,6 +25,14 @@ class _ShopModalState extends State<ShopModal> {
   bool _isProcessing = false;
 
   void _onPackageSelected(CoinPackage package) async {
+    final isBlocked = await AgeConsentModal.isBlockedUnderage();
+    if (!mounted) return;
+    if (isBlocked) {
+      Navigator.of(context).pop();
+      AgeConsentModal.showUnderageBlockedDialog(context);
+      return;
+    }
+
     final isGuest = SupabaseService.instance.isGuest;
 
     // Login is strictly required to make purchases

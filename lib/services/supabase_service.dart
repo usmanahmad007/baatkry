@@ -118,25 +118,98 @@ class SupabaseService {
     return _loadOrCreateProfile();
   }
 
+  /// Extract age from Google OAuth / Gmail user metadata
+  int? _extractAgeFromMetadata(Map<String, dynamic>? metadata) {
+    if (metadata == null) return null;
+
+    // Check direct age field
+    if (metadata['age'] != null) {
+      if (metadata['age'] is int) return metadata['age'] as int;
+      final parsed = int.tryParse(metadata['age'].toString());
+      if (parsed != null) return parsed;
+    }
+
+    // Check Google birthday / birthdate / dob keys
+    final possibleDateStr = metadata['birthdate'] ??
+        metadata['birthday'] ??
+        metadata['dob'] ??
+        metadata['date_of_birth'] ??
+        metadata['custom_claims']?['birthdate'];
+
+    if (possibleDateStr != null) {
+      try {
+        final date = DateTime.tryParse(possibleDateStr.toString());
+        if (date != null) {
+          final now = DateTime.now();
+          int age = now.year - date.year;
+          if (now.month < date.month || (now.month == date.month && now.day < date.day)) {
+            age--;
+          }
+          return age;
+        }
+      } catch (_) {}
+    }
+
+    // Check age_range if provided by Google People
+    if (metadata['age_range'] is Map) {
+      final range = metadata['age_range'] as Map;
+      if (range['max'] != null) {
+        final maxAge = int.tryParse(range['max'].toString());
+        if (maxAge != null && maxAge < 18) return maxAge;
+      }
+      if (range['min'] != null) {
+        final minAge = int.tryParse(range['min'].toString());
+        if (minAge != null && minAge >= 18) return minAge;
+      }
+    }
+
+    return null;
+  }
+
   /// Sign in with Google (OAuth)
-  /// Used for permanent account login to unlock coin purchases and VIP
+  /// Enforces 18+ requirement: checks age from Google/Gmail metadata and rejects under-18 users
   Future<bool> signInWithGoogle() async {
+    // Check if device is flagged as underage blocked
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('baatkry_underage_blocked') ?? false) {
+      throw Exception('Access Denied: You are under 18 years old. Baatkry is strictly for adults 18+.');
+    }
+
     if (_client != null && AppConfig.isSupabaseConfigured) {
       try {
         final success = await _client!.auth.signInWithOAuth(
           OAuthProvider.google,
           redirectTo: kIsWeb ? null : 'com.usmanahmad.baatkry://login-callback/',
+          scopes: 'email profile openid https://www.googleapis.com/auth/user.birthday.read',
         );
         if (success) {
-          // If already signed in, fetch profile
           final user = _client!.auth.currentUser;
           if (user != null) {
+            // Check age directly from Google/Gmail account metadata
+            final detectedAge = _extractAgeFromMetadata(user.userMetadata);
+            if (detectedAge != null) {
+              if (detectedAge < 18) {
+                // UNDERAGE: Don't allow them! Discard session and block
+                await _client!.auth.signOut();
+                await prefs.setBool('baatkry_underage_blocked', true);
+                await prefs.setBool('baatkry_age_verified_18_plus', false);
+                throw Exception('Underage Access Denied: Your Google/Gmail account indicates you are $detectedAge years old. You must be 18 or older to access Baatkry.');
+              } else {
+                // 18 or older: That's good!
+                await prefs.setBool('baatkry_age_verified_18_plus', true);
+                await prefs.setInt('baatkry_user_age', detectedAge);
+                await prefs.setBool('baatkry_underage_blocked', false);
+              }
+            }
+
             final profile = await _fetchRemoteProfile(user.id) ??
                 UserProfile(
                   id: user.id,
                   isAnonymous: false,
                   nickname: user.userMetadata?['full_name'] ?? 'Google User',
                   coins: 100,
+                  age: detectedAge,
+                  isAgeVerified: detectedAge != null && detectedAge >= 18,
                 );
             _currentProfile = profile;
             _profileController.add(_currentProfile);
@@ -145,25 +218,30 @@ class SupabaseService {
         }
       } catch (e) {
         debugPrint('[SupabaseService] Google sign-in note: $e');
+        rethrow;
       }
     }
 
     // Local simulation fallback for testing Google Sign-in immediately
-    final prefs = await SharedPreferences.getInstance();
     final profile = _currentProfile?.copyWith(
           isAnonymous: false,
           nickname: 'Google Explorer',
           coins: (_currentProfile?.coins ?? 50) + 50,
+          isAgeVerified: true,
+          age: 21,
         ) ??
-        UserProfile(
-          id: const Uuid().v4(),
+        const UserProfile(
+          id: 'google_verified_user',
           isAnonymous: false,
           nickname: 'Google Explorer',
           coins: 100,
+          isAgeVerified: true,
+          age: 21,
         );
 
     await prefs.setString('local_user_nickname', profile.nickname);
     await prefs.setInt('local_user_coins', profile.coins);
+    await prefs.setBool('baatkry_age_verified_18_plus', true);
 
     _currentProfile = profile;
     _profileController.add(_currentProfile);
@@ -278,12 +356,15 @@ class SupabaseService {
     await _loadOrCreateProfile();
   }
 
-  /// Update user profile details (interests, nickname, gender)
+  /// Update user profile details (interests, nickname, gender, age verification)
   Future<void> updateProfile({
     String? nickname,
     String? gender,
     List<String>? interests,
     String? avatarUrl,
+    int? age,
+    bool? isAgeVerified,
+    String? birthDate,
   }) async {
     if (_currentProfile == null) return;
 
@@ -292,6 +373,9 @@ class SupabaseService {
       gender: gender,
       interests: interests,
       avatarUrl: avatarUrl,
+      age: age,
+      isAgeVerified: isAgeVerified,
+      birthDate: birthDate,
     );
 
     if (_client != null && AppConfig.isSupabaseConfigured) {
@@ -306,6 +390,8 @@ class SupabaseService {
     if (nickname != null) await prefs.setString('local_user_nickname', nickname);
     if (gender != null) await prefs.setString('local_user_gender', gender);
     if (interests != null) await prefs.setStringList('local_user_interests', interests);
+    if (age != null) await prefs.setInt('local_user_age', age);
+    if (isAgeVerified != null) await prefs.setBool('baatkry_age_verified_18_plus', isAgeVerified);
 
     _profileController.add(_currentProfile);
   }

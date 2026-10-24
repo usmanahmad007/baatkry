@@ -8,17 +8,23 @@ class UserProfile {
   final int coins;
   final bool isVip;
   final String status;
+  final int? age;
+  final bool isAgeVerified;
+  final String? birthDate;
 
   const UserProfile({
     required this.id,
     this.isAnonymous = true,
-    this.nickname = 'Anonymous Monkey',
+    this.nickname = 'Anonymous Explorer',
     this.avatarUrl,
     this.gender = 'unspecified',
     this.interests = const [],
     this.coins = 50,
     this.isVip = false,
     this.status = 'online',
+    this.age,
+    this.isAgeVerified = false,
+    this.birthDate,
   });
 
   UserProfile copyWith({
@@ -31,6 +37,9 @@ class UserProfile {
     int? coins,
     bool? isVip,
     String? status,
+    int? age,
+    bool? isAgeVerified,
+    String? birthDate,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -42,6 +51,9 @@ class UserProfile {
       coins: coins ?? this.coins,
       isVip: isVip ?? this.isVip,
       status: status ?? this.status,
+      age: age ?? this.age,
+      isAgeVerified: isAgeVerified ?? this.isAgeVerified,
+      birthDate: birthDate ?? this.birthDate,
     );
   }
 
@@ -56,6 +68,9 @@ class UserProfile {
       'coins': coins,
       'is_vip': isVip,
       'status': status,
+      'age': age,
+      'is_age_verified': isAgeVerified,
+      'birth_date': birthDate,
     };
   }
 
@@ -63,7 +78,7 @@ class UserProfile {
     return UserProfile(
       id: map['id'] as String? ?? '',
       isAnonymous: map['is_anonymous'] as bool? ?? true,
-      nickname: map['nickname'] as String? ?? 'Anonymous Monkey',
+      nickname: map['nickname'] as String? ?? 'Anonymous Explorer',
       avatarUrl: map['avatar_url'] as String?,
       gender: map['gender'] as String? ?? 'unspecified',
       interests: (map['interests'] as List<dynamic>?)
@@ -73,6 +88,9 @@ class UserProfile {
       coins: map['coins'] as int? ?? 50,
       isVip: map['is_vip'] as bool? ?? false,
       status: map['status'] as String? ?? 'online',
+      age: map['age'] as int?,
+      isAgeVerified: map['is_age_verified'] as bool? ?? false,
+      birthDate: map['birth_date'] as String?,
     );
   }
 }

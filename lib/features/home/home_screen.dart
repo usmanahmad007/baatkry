@@ -11,6 +11,7 @@ import '../../services/permission_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
 import '../matchmaking/radar_screen.dart';
+import '../moderation/age_consent_modal.dart';
 import '../moderation/eula_modal.dart';
 import '../shop/shop_modal.dart';
 
@@ -47,6 +48,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     _checkAndInitPermissions();
+
+    // Verify 18+ Age Consent Gate
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final isBlocked = await AgeConsentModal.isBlockedUnderage();
+      if (isBlocked && mounted) {
+        AgeConsentModal.showUnderageBlockedDialog(context);
+        return;
+      }
+      final isVerified = await AgeConsentModal.isAgeVerified();
+      if (!isVerified && mounted) {
+        AgeConsentModal.checkAndShow(context, onVerified: () {});
+      }
+    });
   }
 
   /// Request permission only one time. Never bother the user repeatedly!
@@ -170,15 +184,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onStartMatching() {
-    EulaModal.checkAndShow(context, onAccepted: () {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => RadarScreen(
-            profile: _profile ?? const UserProfile(id: 'temp_guest'),
-            genderFilter: _selectedGenderFilter,
+    AgeConsentModal.checkAndShow(context, onVerified: () {
+      EulaModal.checkAndShow(context, onAccepted: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RadarScreen(
+              profile: _profile ?? const UserProfile(id: 'temp_guest'),
+              genderFilter: _selectedGenderFilter,
+            ),
           ),
-        ),
-      );
+        );
+      });
     });
   }
 
