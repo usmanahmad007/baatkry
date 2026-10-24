@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
@@ -6,9 +7,11 @@ import 'package:livekit_client/livekit_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/chat_message.dart';
 import '../../models/user_profile.dart';
+import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
 import '../../services/matchmaking_service.dart';
 import '../../services/supabase_service.dart';
+import '../auth/auth_modal.dart';
 import '../matchmaking/radar_screen.dart';
 import '../moderation/eula_modal.dart';
 import '../moderation/report_modal.dart';
@@ -41,20 +44,32 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   VideoTrack? _remoteVideoTrack;
   LocalVideoTrack? _localVideoTrack;
 
-  // Unlimited Call Timer & Gender Coin Deduction (1 Coin = 1 Second)
-  int _callElapsedSeconds = 0;
+  // Call Timers & Economy
+  int _callElapsedSeconds = 0; // Current person call elapsed seconds
+  int _guestTotalSecondsUsed = 0; // Total guest seconds across all calls
   late int _coinsRemaining;
   Timer? _callTimer;
   bool _isLiked = false;
   bool _isTheaterMode = false;
   bool _showMobileChat = false;
 
+  bool get _isGuest => widget.myProfile.isAnonymous;
   bool get _isGenderFiltered => widget.matchResult.peerGender != 'unspecified';
 
   @override
   void initState() {
     super.initState();
     _coinsRemaining = widget.myProfile.coins;
+    _guestTotalSecondsUsed = GuestSessionService.instance.cachedSecondsUsed;
+
+    // Check if guest trial already exhausted before call starts
+    if (_isGuest && GuestSessionService.instance.isTrialExhausted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _onGuestTrialExhausted();
+      });
+      return;
+    }
+
     _initCall();
     _startCallTimer();
   }
@@ -66,7 +81,38 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       setState(() {
         _callElapsedSeconds++;
 
-        // If user is filtering by gender, deduct 1 coin per second
+        // ---------------------------------------------------------------------
+        // GUEST MODE RULES:
+        // 1. Max 3 Minutes (180s) Total Talk Time
+        // 2. Max 30 Seconds with one person -> auto skip to next available user
+        // ---------------------------------------------------------------------
+        if (_isGuest) {
+          _guestTotalSecondsUsed++;
+
+          // Persist guest seconds every 5 seconds
+          if (_guestTotalSecondsUsed % 5 == 0 ||
+              _guestTotalSecondsUsed >= GuestSessionService.maxGuestTotalSeconds) {
+            GuestSessionService.instance.recordSecondsUsed(_guestTotalSecondsUsed);
+          }
+
+          // Rule 1: 3 Minutes total exhausted
+          if (_guestTotalSecondsUsed >= GuestSessionService.maxGuestTotalSeconds) {
+            _onGuestTrialExhausted();
+            return;
+          }
+
+          // Rule 2: 30 Seconds with current person reached -> auto change user
+          if (_callElapsedSeconds >= GuestSessionService.maxGuestPersonSeconds) {
+            _onGuestPersonTimeLimitReached();
+            return;
+          }
+        }
+
+        // ---------------------------------------------------------------------
+        // LOGGED-IN (GMAIL / GOOGLE) USER RULES:
+        // Free Unlimited Random Video Chat!
+        // Gender-Filtered chat requires coins (1 coin = 1 second)
+        // ---------------------------------------------------------------------
         if (_isGenderFiltered) {
           if (_coinsRemaining > 0) {
             _coinsRemaining--;
@@ -79,6 +125,110 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         }
       });
     });
+  }
+
+  /// Guest 30-second per-person limit reached: automatically change user
+  void _onGuestPersonTimeLimitReached() {
+    _callTimer?.cancel();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: AppColors.brandIndigo,
+        content: Row(
+          children: [
+            Icon(Icons.autorenew_rounded, color: Colors.white, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '30s guest limit reached! Auto-switching to next person...',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    _onSkipToNext();
+  }
+
+  /// Guest 3-minute total trial exhausted: prompt login
+  void _onGuestTrialExhausted() {
+    _callTimer?.cancel();
+    _liveKit.disconnect();
+    GuestSessionService.instance.recordSecondsUsed(GuestSessionService.maxGuestTotalSeconds);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+          side: const BorderSide(color: AppColors.brandIndigo, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.timer_off_rounded, color: AppColors.warning, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Guest Trial Ended (3 Mins)',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You have used your 3 minutes of free guest talk time (with 30s per-person limit).',
+              style: TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Sign in with Google to get 100% UNLIMITED free random video chat (no 30s limit!) and unlock VIP gender filters.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Navigator.of(context).pop(); // Back to Home
+            },
+            child: const Text('Exit', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).pop();
+                AuthModal.show(context);
+              },
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('G ', style: TextStyle(color: Color(0xFF4285F4), fontWeight: FontWeight.w900, fontSize: 16)),
+                  Text('Sign In for Unlimited', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onGenderCoinsExhausted() {
@@ -189,6 +339,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   @override
   void dispose() {
     _callTimer?.cancel();
+    if (_isGuest) {
+      GuestSessionService.instance.recordSecondsUsed(_guestTotalSecondsUsed);
+    }
     _remoteTrackSub?.cancel();
     _chatSub?.cancel();
     _peerDisconnectedSub?.cancel();
@@ -201,6 +354,15 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void _onSkipToNext() async {
     await _liveKit.disconnect();
     if (!mounted) return;
+
+    if (_isGuest) {
+      await GuestSessionService.instance.recordSecondsUsed(_guestTotalSecondsUsed);
+      if (!mounted) return;
+      if (_guestTotalSecondsUsed >= GuestSessionService.maxGuestTotalSeconds) {
+        _onGuestTrialExhausted();
+        return;
+      }
+    }
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -371,54 +533,115 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             ],
           ),
 
-          // Right: Live Duration & Gender Filter Coins
+          // Right: Live Duration & Guest Countdown or VIP Coins
           Row(
             children: [
-              // Live Duration Pill (Unlimited!)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: AppColors.darkCardGradient,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.timer_rounded, size: 16, color: Colors.white),
-                    const SizedBox(width: 6),
-                    Text(
-                      _formatDuration(_callElapsedSeconds),
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-
-              // If gender-filtered, show remaining coins / seconds (1 coin = 1 second)
-              if (_isGenderFiltered) ...[
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () => ShopModal.show(context),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: _coinsRemaining < 60 ? null : AppColors.vipGoldGradient,
-                      color: _coinsRemaining < 60 ? AppColors.danger : null,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.circle, size: 8, color: Colors.black),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${_coinsRemaining}s (1 coin/s)',
-                          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 11),
-                        ),
-                      ],
+              if (_isGuest) ...[
+                // Guest Rule 1: Auto-Switch 30s Countdown
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: (GuestSessionService.maxGuestPersonSeconds - _callElapsedSeconds) <= 5
+                        ? AppColors.danger.withOpacity(0.25)
+                        : AppColors.brandIndigo.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: (GuestSessionService.maxGuestPersonSeconds - _callElapsedSeconds) <= 5
+                          ? AppColors.danger
+                          : AppColors.brandIndigo,
                     ),
                   ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.av_timer_rounded,
+                        size: 14,
+                        color: (GuestSessionService.maxGuestPersonSeconds - _callElapsedSeconds) <= 5
+                            ? AppColors.danger
+                            : Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Auto-next: ${max(0, GuestSessionService.maxGuestPersonSeconds - _callElapsedSeconds)}s',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: (GuestSessionService.maxGuestPersonSeconds - _callElapsedSeconds) <= 5
+                              ? AppColors.danger
+                              : Colors.white,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
+
+                // Guest Rule 2: 3 Mins Total Countdown
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.surfaceBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.hourglass_bottom_rounded, size: 14, color: AppColors.coinGold),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Trial: ${max(0, GuestSessionService.maxGuestTotalSeconds - _guestTotalSecondsUsed)}s',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.coinGold, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                // Google Logged-In User: 100% UNLIMITED Random Video Chat!
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.darkCardGradient,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.all_inclusive_rounded, size: 16, color: AppColors.success),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Unlimited • ${_formatDuration(_callElapsedSeconds)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // If gender-filtered, show remaining coins / seconds (1 coin = 1 second)
+                if (_isGenderFiltered) ...[
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => ShopModal.show(context),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: _coinsRemaining < 60 ? null : AppColors.vipGoldGradient,
+                        color: _coinsRemaining < 60 ? AppColors.danger : null,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.circle, size: 8, color: Colors.black),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${_coinsRemaining}s (1 coin/s)',
+                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
               const SizedBox(width: 10),
 

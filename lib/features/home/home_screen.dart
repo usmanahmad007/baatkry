@@ -6,6 +6,7 @@ import 'package:livekit_client/livekit_client.dart';
 import '../../core/config/app_config.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/user_profile.dart';
+import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/supabase_service.dart';
@@ -184,7 +185,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onStartMatching() {
-    AgeConsentModal.checkAndShow(context, onVerified: () {
+    AgeConsentModal.checkAndShow(context, onVerified: () async {
+      // If user is in guest mode, check remaining talk time (max 3 minutes total)
+      final isGuest = _profile?.isAnonymous ?? true;
+      if (isGuest) {
+        final remaining = await GuestSessionService.instance.getGuestSecondsRemaining();
+        if (remaining <= 0) {
+          if (mounted) _showGuestTrialExhaustedDialog();
+          return;
+        }
+      }
+
+      if (!mounted) return;
       EulaModal.checkAndShow(context, onAccepted: () {
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -198,26 +210,164 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _showGuestTrialExhaustedDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+          side: const BorderSide(color: AppColors.brandIndigo, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.timer_off_rounded, color: AppColors.warning, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Guest Trial Ended (3 Mins)',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You have used your 3 minutes of free guest talk time (with 30s per-person limit).',
+              style: TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Sign in with Google to get 100% UNLIMITED free random video chat and unlock VIP gender filters!',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                AuthModal.show(context);
+              },
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('G ', style: TextStyle(color: Color(0xFF4285F4), fontWeight: FontWeight.w900, fontSize: 16)),
+                  Text('Sign In for Unlimited', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onSelectGenderFilter(String filter) {
     if (filter != 'everyone') {
       final isGuest = _profile?.isAnonymous ?? true;
 
-      // STRICT REQUIREMENT: If guest, Google login is required
+      // 1. STRICT REQUIREMENT: If guest, Google login is required first
       if (isGuest) {
         _promptLoginForFilter(filter);
         return;
       }
 
-      // Check if user has sufficient coins (1 coin = 1 sec, min 60 coins needed) or VIP
+      // 2. STRICT REQUIREMENT: Even if logged in with Google/Gmail,
+      // user cannot chat with specific gender unless they purchase a coin package!
       final coins = _profile?.coins ?? 0;
       final isVip = _profile?.isVip ?? false;
       if (coins < 60 && !isVip) {
-        ShopModal.show(context);
+        _promptPackageRequiredForGender(filter);
         return;
       }
     }
 
     setState(() => _selectedGenderFilter = filter);
+  }
+
+  void _promptPackageRequiredForGender(String filter) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.coinGold, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.workspace_premium_rounded, color: AppColors.coinGold, size: 28),
+            SizedBox(width: 10),
+            Text('Package Required', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your Google account gives you Unlimited Free Random Chat!\n\nTo filter specifically by ${filter.toUpperCase()}, you must buy a coin package.',
+              style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.surfaceBorder),
+              ),
+              child: const Text(
+                'Rate: 1 Coin = 1 Second of Gender-Filtered Video Chat.\nStarter Pack: 500 Rs = 60 Minutes (3,600 Coins).',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Free Random', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: AppColors.vipGoldGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                ShopModal.show(context);
+              },
+              child: const Text('View Packages (Shop)', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _promptLoginForFilter(String filter) {
@@ -325,6 +475,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           const SizedBox(height: 18),
 
+                          // Dynamic Trial / Account Status Banner
+                          _buildTrialStatusBanner(isGuest),
+
+                          const SizedBox(height: 14),
+
                           // Gender Filter Selector (Everyone free vs Paid VIP categories)
                           _buildGenderFilterSection(),
 
@@ -355,6 +510,104 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTrialStatusBanner(bool isGuest) {
+    if (isGuest) {
+      final remaining = GuestSessionService.instance.cachedSecondsRemaining;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.brandIndigo.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.timer_outlined, color: AppColors.brandPink, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Guest Mode: ',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: remaining <= 30 ? AppColors.danger : AppColors.brandIndigo,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${remaining}s left',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    '3 mins total • 30s per stranger • Matches 60% girls',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => AuthModal.show(context),
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Get Unlimited', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.success.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.success.withOpacity(0.35)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.all_inclusive_rounded, color: AppColors.success, size: 22),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Google Account Verified',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  Text(
+                    '100% Unlimited Free Random Chat • VIP filter requires coins',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

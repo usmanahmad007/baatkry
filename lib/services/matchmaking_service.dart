@@ -155,7 +155,22 @@ class MatchmakingService {
     }
 
     if (waitingPeers.isNotEmpty) {
-      final peer = waitingPeers.first;
+      Map<String, dynamic> peer;
+      // If user is in guest mode, show 60% girls and 40% other
+      if (myProfile.isAnonymous && genderFilter == 'everyone') {
+        final womenPeers = waitingPeers.where((p) => p['gender'] == 'women').toList();
+        final otherPeers = waitingPeers.where((p) => p['gender'] != 'women').toList();
+        if (womenPeers.isNotEmpty && (Random().nextDouble() < 0.60 || otherPeers.isEmpty)) {
+          peer = womenPeers[Random().nextInt(womenPeers.length)];
+        } else if (otherPeers.isNotEmpty) {
+          peer = otherPeers[Random().nextInt(otherPeers.length)];
+        } else {
+          peer = waitingPeers.first;
+        }
+      } else {
+        peer = waitingPeers.first;
+      }
+
       final peerId = peer['user_id'] as String;
       final peerName = peer['nickname'] as String? ?? 'Stranger';
       final peerGender = peer['gender'] as String? ?? 'unspecified';
@@ -192,8 +207,8 @@ class MatchmakingService {
   }
 
   void _createSimulatedMatch(UserProfile myProfile, String genderFilter) {
-    final namesMen = ['Rajat kumar', 'Alex', 'Jordan', 'Sam', 'Lucas'];
-    final namesWomen = ['Sophia', 'Elena', 'Priya', 'Chloe', 'Zoe'];
+    final namesMen = ['Rajat kumar', 'Alex', 'Jordan', 'Sam', 'Lucas', 'Ali', 'Hamza', 'Daniel'];
+    final namesWomen = ['Sophia', 'Elena', 'Priya', 'Chloe', 'Zoe', 'Ayesha', 'Sara', 'Fatima', 'Jessica', 'Maria'];
     final namesTrans = ['Taylor', 'River', 'Morgan', 'Casey', 'Rowan'];
 
     List<String> pool;
@@ -209,8 +224,39 @@ class MatchmakingService {
       pool = namesTrans;
       targetGender = 'transgender';
     } else {
-      pool = [...namesMen, ...namesWomen, ...namesTrans];
-      targetGender = 'unspecified';
+      // Free / Random matching:
+      // STRICT REQUIREMENT: If user is in guest mode, show 60% girls and 40% other
+      if (myProfile.isAnonymous) {
+        final randomVal = Random().nextDouble();
+        if (randomVal < 0.60) {
+          // 60% probability for girls/women
+          pool = namesWomen;
+          targetGender = 'women';
+        } else {
+          // 40% probability for other (men or transgender)
+          final otherVal = Random().nextDouble();
+          if (otherVal < 0.75) {
+            pool = namesMen;
+            targetGender = 'men';
+          } else {
+            pool = namesTrans;
+            targetGender = 'transgender';
+          }
+        }
+      } else {
+        // Logged-in Google user in random mode: balanced distribution
+        final randomVal = Random().nextDouble();
+        if (randomVal < 0.50) {
+          pool = namesWomen;
+          targetGender = 'women';
+        } else if (randomVal < 0.85) {
+          pool = namesMen;
+          targetGender = 'men';
+        } else {
+          pool = namesTrans;
+          targetGender = 'transgender';
+        }
+      }
     }
 
     final randomName = pool[Random().nextInt(pool.length)];

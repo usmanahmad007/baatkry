@@ -12,13 +12,14 @@ Baatkry is a cross-platform live video chatting platform (Web, Android, iOS) ins
 
 ## ✨ Key Features
 
-- **Unified Flow (No Confusing Switchers):**
-  - **Free Unlimited Chat:** Instant 1-tap random video matching worldwide. No email/password or phone registration needed.
-  - **VIP Gender Filters:** Choose specifically to talk to **Women 👑**, **Men 👑**, or **Transgender 👑**.
-- **Transparent Coin Economy:**
+- **Guest Mode vs Google Account:**
+  - **Guest Trial:** 3 Minutes total talk time, max 30 seconds per person (auto-skips to next user). Matchmaking shows **60% Girls / 40% Other**.
+  - **Google / Gmail Sign-In:** Unlocks **100% UNLIMITED** free random video chatting with no time limits.
+- **VIP Gender Filters & Transparent Economy:**
+  - **Gender Filter:** Specific filters (**Women 👑**, **Men 👑**, **Trans 👑**) require coin packages.
   - **Plan:** 500 Rupees = 60 Minutes (1 Coin = 1 Second of Gender-Filtered Video Chat).
   - **Minimum Deposit:** 500 Rs (60 Minutes = 3,600 Coins).
-  - **Free Tier:** Unlimited random matching is 100% free forever.
+  - **Top-Up Payments:** Supports In-App Purchases, Safepay, JazzCash, Easypaisa, PayFast & Stripe (see [TOPUP_PAYMENTS_SETUP.md](TOPUP_PAYMENTS_SETUP.md)).
 - **One-Time Permission System:**
   - Camera & microphone permissions are requested once and cached with `SharedPreferences`.
   - Zero redundant prompts across screens or calls.
