@@ -31,6 +31,35 @@ class SupabaseService {
           anonKey: AppConfig.supabaseAnonKey,
         );
         _client = Supabase.instance.client;
+
+        // Auto-handle OAuth PKCE callbacks, deep links, and auth state changes
+        _client!.auth.onAuthStateChange.listen((data) async {
+          final event = data.event;
+          final session = data.session;
+          debugPrint('[SupabaseService] Auth state changed: $event, user: ${session?.user.id}');
+
+          if (event == AuthChangeEvent.signedIn ||
+              event == AuthChangeEvent.tokenRefreshed ||
+              event == AuthChangeEvent.userUpdated) {
+            if (session?.user != null) {
+              final user = session!.user;
+              final detectedAge = _extractAgeFromMetadata(user.userMetadata);
+              final profile = await _fetchRemoteProfile(user.id) ??
+                  UserProfile(
+                    id: user.id,
+                    isAnonymous: false,
+                    nickname: user.userMetadata?['full_name'] ?? user.email?.split('@').first ?? 'Google User',
+                    coins: 100,
+                    age: detectedAge,
+                    isAgeVerified: detectedAge != null && detectedAge >= 18,
+                  );
+              _currentProfile = profile;
+              _profileController.add(_currentProfile);
+            }
+          } else if (event == AuthChangeEvent.signedOut) {
+            await _loadOrCreateProfile();
+          }
+        });
       }
     } catch (e) {
       debugPrint('[SupabaseService] Note: Supabase initialization skipped or failed: $e');
@@ -177,9 +206,13 @@ class SupabaseService {
 
     if (_client != null && AppConfig.isSupabaseConfigured) {
       try {
+        final redirectUrl = kIsWeb
+            ? '${Uri.base.origin}/'
+            : 'com.usmanahmad.baatkry://login-callback/';
+
         final success = await _client!.auth.signInWithOAuth(
           OAuthProvider.google,
-          redirectTo: kIsWeb ? null : 'com.usmanahmad.baatkry://login-callback/',
+          redirectTo: redirectUrl,
           scopes: 'email profile openid',
         );
         if (success) {

@@ -21,6 +21,8 @@ class LiveKitService {
   bool _isMicMuted = false;
   bool _isVideoMuted = false;
 
+  bool _isDisconnecting = false;
+
   final _callStateController = StreamController<CallState>.broadcast();
   final _remoteTrackController = StreamController<VideoTrack?>.broadcast();
   final _chatMessageController = StreamController<ChatMessage>.broadcast();
@@ -47,8 +49,14 @@ class LiveKitService {
     }
 
     try {
-      _previewTrack?.stop();
-      _previewTrack?.dispose();
+      if (_previewTrack != null) {
+        final old = _previewTrack;
+        _previewTrack = null;
+        try {
+          await old?.stop();
+          await old?.dispose();
+        } catch (_) {}
+      }
       _previewTrack = await LocalVideoTrack.createCameraTrack(
         CameraCaptureOptions(cameraPosition: _cameraPosition),
       );
@@ -61,10 +69,15 @@ class LiveKitService {
     }
   }
 
-  void stopLocalPreview() {
-    _previewTrack?.stop();
-    _previewTrack?.dispose();
-    _previewTrack = null;
+  Future<void> stopLocalPreview() async {
+    if (_previewTrack != null) {
+      final old = _previewTrack;
+      _previewTrack = null;
+      try {
+        await old?.stop();
+        await old?.dispose();
+      } catch (_) {}
+    }
   }
 
   /// Connect to a LiveKit Room using WebRTC SFU
@@ -223,17 +236,47 @@ class LiveKitService {
     }
   }
 
-  /// Disconnect and cleanup room resources
+  /// Disconnect and cleanup room resources cleanly without emitting on disposed listeners
   Future<void> disconnect() async {
-    _remoteVideoTrack = null;
-    _remoteTrackController.add(null);
-    _listener?.dispose();
-    _listener = null;
-    if (_room != null) {
-      await _room!.disconnect();
-      await _room!.dispose();
+    if (_isDisconnecting) return;
+    _isDisconnecting = true;
+
+    try {
+      _remoteVideoTrack = null;
+      if (!_remoteTrackController.isClosed) {
+        _remoteTrackController.add(null);
+      }
+
+      final currentRoom = _room;
+      final currentListener = _listener;
       _room = null;
+      _listener = null;
+
+      if (currentRoom != null) {
+        try {
+          await currentRoom.disconnect();
+        } catch (e) {
+          debugPrint('[LiveKitService] room.disconnect note: $e');
+        }
+        try {
+          await currentRoom.dispose();
+        } catch (e) {
+          debugPrint('[LiveKitService] room.dispose note: $e');
+        }
+      }
+
+      if (currentListener != null) {
+        try {
+          await currentListener.dispose();
+        } catch (e) {
+          debugPrint('[LiveKitService] listener.dispose note: $e');
+        }
+      }
+    } finally {
+      if (!_callStateController.isClosed) {
+        _callStateController.add(CallState.idle);
+      }
+      _isDisconnecting = false;
     }
-    _callStateController.add(CallState.idle);
   }
 }

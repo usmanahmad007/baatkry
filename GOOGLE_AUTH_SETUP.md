@@ -76,15 +76,31 @@ This happens because your Google Cloud OAuth Consent Screen is currently in **"T
 
 ---
 
-## 3. Configure Redirect URLs in Supabase
+## 3. Configure Redirect URLs in Supabase (Important for `localhost refused to connect`)
+
+If you got:
+> **`http://localhost:3000/?code=... This site can’t be reached. localhost refused to connect.`**
+
+This happens because Flutter Web runs on a random port (e.g. `http://localhost:60399`) unless configured, while Supabase redirected back to `localhost:3000` where nothing was listening.
+
+To fix this so it works on ANY port and in mobile apps:
 
 1. In Supabase Dashboard, go to **Authentication** -> **URL Configuration**.
-2. **Site URL**: Enter your main app URL (e.g. `http://localhost:3000` or production web URL).
-3. Under **Redirect URLs**, click **Add URL** and add:
-   - `com.usmanahmad.baatkry://login-callback/` *(for Android / iOS deep link)*
-   - `http://localhost:3000/**` *(for local web testing)*
+2. **Site URL**: Enter `http://localhost:3000` (or your web domain `https://baatkry.com`).
+3. Under **Redirect URLs**, click **Add URL** and add each of these:
+   - `http://localhost:**` *(Wildcard: permits ANY localhost port Flutter Web uses!)*
+   - `http://localhost:*/**`
+   - `http://localhost:3000/**`
+   - `com.usmanahmad.baatkry://login-callback` *(for Android / iOS deep link)*
    - `https://baatkry.com/**` *(for production web)*
 4. Click **Save**.
+
+### 💡 Pro-Tip for Flutter Web:
+Run Flutter Web with a fixed port:
+```bash
+flutter run -d chrome --web-port=3000
+```
+This guarantees your Flutter Web app always matches `http://localhost:3000`!
 
 ---
 
