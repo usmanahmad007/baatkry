@@ -22,6 +22,23 @@ void main() {
       expect(computeAge(minorDob) >= 18, isFalse);
     });
 
+    test('Strict 18+ boundary evaluation for birth certificates', () {
+      final now = DateTime.now();
+      final exactly18 = DateTime(now.year - 18, now.month, now.day);
+      final under18ByOneDay = DateTime(now.year - 18, now.month, now.day + 1);
+
+      int computeAge(DateTime dob) {
+        int age = now.year - dob.year;
+        if (now.month < dob.month || (now.month == dob.month && now.day < dob.day)) {
+          age--;
+        }
+        return age;
+      }
+
+      expect(computeAge(exactly18) >= 18, isTrue);
+      expect(computeAge(under18ByOneDay) >= 18, isFalse);
+    });
+
     test('UserProfile handles age and isAgeVerified properly', () {
       const adultProfile = UserProfile(
         id: 'user_1',

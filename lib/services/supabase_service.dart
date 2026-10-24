@@ -180,12 +180,12 @@ class SupabaseService {
         final success = await _client!.auth.signInWithOAuth(
           OAuthProvider.google,
           redirectTo: kIsWeb ? null : 'com.usmanahmad.baatkry://login-callback/',
-          scopes: 'email profile openid https://www.googleapis.com/auth/user.birthday.read',
+          scopes: 'email profile openid',
         );
         if (success) {
           final user = _client!.auth.currentUser;
           if (user != null) {
-            // Check age directly from Google/Gmail account metadata
+            // Check age if present in metadata
             final detectedAge = _extractAgeFromMetadata(user.userMetadata);
             if (detectedAge != null) {
               if (detectedAge < 18) {
@@ -218,6 +218,13 @@ class SupabaseService {
         }
       } catch (e) {
         debugPrint('[SupabaseService] Google sign-in note: $e');
+        final errText = e.toString().toLowerCase();
+        if (errText.contains('access_denied') || errText.contains('verification') || errText.contains('403')) {
+          throw Exception(
+            'Google Sign-In Denied (Error 403): Your Google Cloud OAuth screen is currently in "Testing" mode. '
+            'To resolve this in 30 seconds: Add your email to "Test users" in Google Cloud Console, or click "Publish App".',
+          );
+        }
         rethrow;
       }
     }

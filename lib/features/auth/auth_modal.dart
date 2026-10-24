@@ -61,7 +61,7 @@ class _AuthModalState extends State<AuthModal> {
           _isLoading = false;
         });
 
-        if (errorStr.contains('Underage') || errorStr.contains('18')) {
+        if (errorStr.toLowerCase().contains('underage') || errorStr.toLowerCase().contains('under 18')) {
           Navigator.of(context).pop();
           AgeConsentModal.showUnderageBlockedDialog(context);
         }

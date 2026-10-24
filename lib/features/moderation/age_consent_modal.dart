@@ -101,17 +101,17 @@ class AgeConsentModal extends StatefulWidget {
 }
 
 class _AgeConsentModalState extends State<AgeConsentModal> {
-  late DateTime _selectedDob;
-  late int _calculatedAge;
-  bool _confirmedTerms = true;
+  DateTime? _selectedDob;
+  int? _calculatedAge;
+  bool _confirmedTerms = false;
 
   @override
   void initState() {
     super.initState();
-    // Default to 19 years ago
-    final now = DateTime.now();
-    _selectedDob = DateTime(now.year - 19, now.month, now.day);
-    _calculatedAge = _computeAge(_selectedDob);
+    // Do NOT pre-fill date of birth. User must enter it according to their birth certificate.
+    _selectedDob = null;
+    _calculatedAge = null;
+    _confirmedTerms = false;
   }
 
   int _computeAge(DateTime dob) {
@@ -123,15 +123,22 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
     return age;
   }
 
-  bool get _isAdult => _calculatedAge >= 18;
+  bool get _isAdult => _calculatedAge != null && _calculatedAge! >= 18;
+  bool get _isUnderage => _calculatedAge != null && _calculatedAge! < 18;
 
   Future<void> _pickDateOfBirth() async {
     final now = DateTime.now();
+    // Default initial date picker position to 18 years ago for easy selection
+    final initialPickerDate = _selectedDob ?? DateTime(now.year - 18, now.month, now.day);
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDob,
+      initialDate: initialPickerDate,
       firstDate: DateTime(now.year - 100),
       lastDate: now,
+      helpText: 'ENTER DATE OF BIRTH (BIRTH CERTIFICATE)',
+      cancelText: 'Cancel',
+      confirmText: 'Confirm',
+      fieldLabelText: 'Birth Date (DD/MM/YYYY)',
       builder: (context, child) {
         return Theme(
           data: ThemeData.dark().copyWith(
@@ -152,19 +159,20 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
       setState(() {
         _selectedDob = picked;
         _calculatedAge = _computeAge(picked);
+        _confirmedTerms = true;
       });
     }
   }
 
   Future<void> _onAcceptAndProceed() async {
-    if (!_isAdult) {
+    if (_calculatedAge == null || !_isAdult) {
       _blockAsUnderage();
       return;
     }
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(AgeConsentModal.keyAgeVerified, true);
-    await prefs.setInt(AgeConsentModal.keyUserAge, _calculatedAge);
+    await prefs.setInt(AgeConsentModal.keyUserAge, _calculatedAge!);
 
     await SupabaseService.instance.updateProfile(age: _calculatedAge);
 
@@ -191,7 +199,10 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
       backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
-        side: const BorderSide(color: AppColors.brandIndigo, width: 1.5),
+        side: BorderSide(
+          color: _isUnderage ? AppColors.danger : AppColors.brandIndigo,
+          width: 1.5,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -205,24 +216,29 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    gradient: _isAdult ? AppColors.primaryGradient : null,
-                    color: _isAdult ? null : AppColors.danger,
+                    gradient: _isUnderage ? null : AppColors.primaryGradient,
+                    color: _isUnderage ? AppColors.danger : null,
                     shape: BoxShape.circle,
                   ),
                   child: const Text('🔞', style: TextStyle(fontSize: 22)),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         '18+ Age Verification',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       Text(
-                        'Adult Community Consent',
-                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        _selectedDob == null
+                            ? 'Official Birth Certificate Required'
+                            : (_isAdult ? 'Adult Community Verified' : 'Underage Restricted (<18)'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _isUnderage ? AppColors.danger : AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -232,7 +248,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
             const SizedBox(height: 18),
 
             const Text(
-              'Baatkry is an adult platform. You must confirm you are 18 years or older before entering live video chat.',
+              'Baatkry is an adult platform. You must enter your exact Date of Birth according to your official birth certificate before you can proceed.',
               style: TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
             ),
             const SizedBox(height: 16),
@@ -242,55 +258,107 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
               onTap: _pickDateOfBirth,
               borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: _isAdult ? AppColors.brandIndigo.withOpacity(0.5) : AppColors.danger,
+                    color: _selectedDob == null
+                        ? AppColors.brandIndigo
+                        : (_isAdult ? AppColors.success : AppColors.danger),
                     width: 1.5,
                   ),
+                  boxShadow: _selectedDob == null
+                      ? [
+                          BoxShadow(
+                            color: AppColors.brandIndigo.withOpacity(0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.calendar_month_rounded,
-                      color: _isAdult ? AppColors.brandIndigo : AppColors.danger,
-                      size: 24,
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _selectedDob == null
+                            ? AppColors.brandIndigo.withOpacity(0.15)
+                            : (_isAdult ? AppColors.success : AppColors.danger).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _selectedDob == null
+                            ? Icons.calendar_month_rounded
+                            : (_isAdult ? Icons.verified_user_rounded : Icons.cancel_rounded),
+                        color: _selectedDob == null
+                            ? AppColors.brandPink
+                            : (_isAdult ? AppColors.success : AppColors.danger),
+                        size: 26,
+                      ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Your Date of Birth (Tap to change):',
-                            style: TextStyle(color: AppColors.textMuted, fontSize: 11),
-                          ),
-                          const SizedBox(height: 2),
                           Text(
-                            '${_selectedDob.day}/${_selectedDob.month}/${_selectedDob.year}',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                            _selectedDob == null
+                                ? 'Date of Birth (Birth Certificate):'
+                                : 'Birth Certificate Date (Tap to change):',
+                            style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            _selectedDob == null
+                                ? 'Tap to enter your birth date'
+                                : '${_selectedDob!.day.toString().padLeft(2, '0')}/${_selectedDob!.month.toString().padLeft(2, '0')}/${_selectedDob!.year}',
+                            style: TextStyle(
+                              color: _selectedDob == null ? AppColors.brandPrimary : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: _selectedDob == null ? 14 : 16,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _isAdult ? AppColors.success.withOpacity(0.2) : AppColors.danger.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _isAdult ? AppColors.success : AppColors.danger),
-                      ),
-                      child: Text(
-                        '$_calculatedAge Years Old',
-                        style: TextStyle(
-                          color: _isAdult ? AppColors.success : AppColors.danger,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                    if (_selectedDob == null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Enter',
+                              style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 11),
+                          ],
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: (_isAdult ? AppColors.success : AppColors.danger).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _isAdult ? AppColors.success : AppColors.danger),
+                        ),
+                        child: Text(
+                          '$_calculatedAge Years Old',
+                          style: TextStyle(
+                            color: _isAdult ? AppColors.success : AppColors.danger,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -298,7 +366,28 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
             const SizedBox(height: 14),
 
             // Status feedback banner
-            if (!_isAdult)
+            if (_selectedDob == null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.brandIndigo.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.brandIndigo.withOpacity(0.35)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: AppColors.brandIndigo, size: 20),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Step 1: Enter your birth date above as recorded on your official birth certificate.',
+                        style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (_isUnderage)
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -312,7 +401,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'You are under 18 ($_calculatedAge years old). You are not permitted to use Baatkry.',
+                        'Underage Restricted: You are $_calculatedAge years old according to your birth certificate. You cannot enter Baatkry.',
                         style: const TextStyle(color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -327,14 +416,14 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: AppColors.success.withOpacity(0.35)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.check_circle_rounded, color: AppColors.success, size: 20),
-                    SizedBox(width: 10),
+                    const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 20),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Age Verified: You meet the 18+ requirement to access Baatkry.',
-                        style: TextStyle(color: AppColors.success, fontSize: 12, fontWeight: FontWeight.w600),
+                        'Age Verified: You are $_calculatedAge years old and meet the 18+ requirement.',
+                        style: const TextStyle(color: AppColors.success, fontSize: 12, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -349,11 +438,13 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 Checkbox(
                   value: _confirmedTerms,
                   activeColor: AppColors.brandIndigo,
-                  onChanged: (val) => setState(() => _confirmedTerms = val ?? true),
+                  onChanged: _selectedDob == null
+                      ? null
+                      : (val) => setState(() => _confirmedTerms = val ?? true),
                 ),
                 const Expanded(
                   child: Text(
-                    'I solemnly declare I am 18+ and agree to the Zero-Tolerance Community Standards.',
+                    'I certify this date of birth matches my official birth certificate and I am 18+.',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
                   ),
                 ),
@@ -362,18 +453,42 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
             const SizedBox(height: 16),
 
             // Action Buttons
-            if (_isAdult)
-              Container(
-                decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.brandIndigo.withOpacity(0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
+            if (_selectedDob == null)
+              ElevatedButton(
+                onPressed: _pickDateOfBirth,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.surfaceElevated,
+                  side: const BorderSide(color: AppColors.brandIndigo, width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.edit_calendar_rounded, color: AppColors.brandPink, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Enter Date of Birth to Proceed',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
                     ),
                   ],
+                ),
+              )
+            else if (_isAdult)
+              Container(
+                decoration: BoxDecoration(
+                  gradient: _confirmedTerms ? AppColors.primaryGradient : null,
+                  color: _confirmedTerms ? null : AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: _confirmedTerms
+                      ? [
+                          BoxShadow(
+                            color: AppColors.brandIndigo.withOpacity(0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: ElevatedButton(
                   onPressed: _confirmedTerms ? _onAcceptAndProceed : null,
@@ -381,10 +496,11 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                     backgroundColor: Colors.transparent,
                     shadowColor: Colors.transparent,
                     padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                   child: const Text(
-                    'I am 18+ & Accept Terms',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                    'I am 18+ & Accept Terms (Proceed)',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
                   ),
                 ),
               )
@@ -398,7 +514,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 ),
                 child: const Text(
                   'I am Under 18 (Exit App)',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
                 ),
               ),
           ],
