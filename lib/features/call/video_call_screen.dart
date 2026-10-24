@@ -148,117 +148,132 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 440),
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: AppColors.coinGold, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.coinGold.withOpacity(0.35),
-                blurRadius: 28,
-                spreadRadius: 2,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.vipGoldGradient,
-                      borderRadius: BorderRadius.circular(12),
+      builder: (dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 440),
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: AppColors.coinGold, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.coinGold.withOpacity(isDark ? 0.35 : 0.2),
+                  blurRadius: 28,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.vipGoldGradient,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.star_rounded, color: Colors.black, size: 22),
                     ),
-                    child: const Icon(Icons.star_rounded, color: Colors.black, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Choose Specific Gender 👑',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Choose Specific Gender 👑',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
+                          Text(
+                            'Select preferred gender (1 coin = 1s)',
+                            style: TextStyle(
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildGenderChoiceButton(
+                        dialogContext,
+                        gender: 'women',
+                        label: 'Women 👑',
+                        icon: Icons.female_rounded,
+                        gradient: const LinearGradient(colors: [Color(0xFFEC4899), Color(0xFFF43F5E)]),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildGenderChoiceButton(
+                        dialogContext,
+                        gender: 'men',
+                        label: 'Men 👑',
+                        icon: Icons.male_rounded,
+                        gradient: const LinearGradient(colors: [Color(0xFF3B82F6), Color(0xFF6366F1)]),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildGenderChoiceButton(
+                        dialogContext,
+                        gender: 'transgender',
+                        label: 'Trans 👑',
+                        icon: Icons.transgender_rounded,
+                        gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFFA855F7)]),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Your Balance: $_coinsRemaining Coins',
+                      style: const TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: Text(
+                        'Stay in Random Chat',
+                        style: TextStyle(
+                          color: isDark ? Colors.white70 : AppColors.lightTextSecondary,
+                          fontSize: 12,
                         ),
-                        Text(
-                          'Select preferred gender (1 coin = 1s)',
-                          style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildGenderChoiceButton(
-                      dialogContext,
-                      gender: 'women',
-                      label: 'Women 👑',
-                      icon: Icons.female_rounded,
-                      gradient: const LinearGradient(colors: [Color(0xFFEC4899), Color(0xFFF43F5E)]),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildGenderChoiceButton(
-                      dialogContext,
-                      gender: 'men',
-                      label: 'Men 👑',
-                      icon: Icons.male_rounded,
-                      gradient: const LinearGradient(colors: [Color(0xFF3B82F6), Color(0xFF6366F1)]),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildGenderChoiceButton(
-                      dialogContext,
-                      gender: 'transgender',
-                      label: 'Trans 👑',
-                      icon: Icons.transgender_rounded,
-                      gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFFA855F7)]),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Your Balance: $_coinsRemaining Coins',
-                    style: const TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('Stay in Random Chat', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     ).then((_) {
       _isGenderPromptShowing = false;
     });

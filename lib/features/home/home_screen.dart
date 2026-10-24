@@ -58,97 +58,122 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showOneTimePermissionDialog({required VoidCallback onAllowed}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
+      builder: (ctx) => Dialog(
+        backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-          side: const BorderSide(color: AppColors.brandIndigo, width: 1.5),
+          borderRadius: BorderRadius.circular(22),
+          side: BorderSide(
+            color: isDark ? AppColors.brandIndigo : AppColors.brandIndigo.withOpacity(0.4),
+            width: 1.2,
+          ),
         ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'Camera & Mic Access',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Baatkry connects you face-to-face with people around the world for live video chatting.',
-              style: TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.surfaceBorder),
-              ),
-              child: const Row(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 380),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 children: [
-                  Icon(Icons.verified_rounded, color: AppColors.success, size: 20),
-                  SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Permission is asked only once and saved. You will not be asked again.',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      'Camera & Mic Access',
+                      style: TextStyle(
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.brandIndigo.withOpacity(0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
+              const SizedBox(height: 12),
+              Text(
+                'Baatkry connects you face-to-face with people worldwide for live video chat.',
+                style: TextStyle(
+                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                  fontSize: 13,
+                  height: 1.35,
                 ),
-              ],
-            ),
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                PermissionService.instance.markPermissionHandled(granted: true);
-                onAllowed();
-              },
-              child: const Text('Allow & Continue', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-            ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkSurfaceBorder : AppColors.lightSurfaceBorder,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified_rounded, color: AppColors.success, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Asked once and saved. You will not be asked again.',
+                        style: TextStyle(
+                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      ),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        PermissionService.instance.markPermissionHandled(granted: true);
+                        onAllowed();
+                      },
+                      child: const Text('Allow & Continue', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -446,10 +471,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final isGuest = _profile?.isAnonymous ?? true;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.meshBackgroundGradient,
+        decoration: BoxDecoration(
+          gradient: AppColors.meshGrad(context),
         ),
         child: SafeArea(
           child: Column(
@@ -510,21 +535,32 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTrialStatusBanner(bool isGuest) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (isGuest) {
       final remaining = GuestSessionService.instance.cachedSecondsRemaining;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: AppColors.surf(context),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
+          border: Border.all(color: AppColors.brandIndigo.withOpacity(isDark ? 0.5 : 0.3)),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.brandIndigo.withOpacity(0.2),
+                color: AppColors.brandIndigo.withOpacity(0.15),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.timer_outlined, color: AppColors.brandPink, size: 20),
@@ -536,9 +572,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         'Guest Mode: ',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(color: AppColors.txtPrimary(context), fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -554,9 +590,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  const Text(
+                  Text(
                     '3 mins total • 30s per stranger • Matches 60% girls',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                    style: TextStyle(color: AppColors.txtSecondary(context), fontSize: 11),
                   ),
                 ],
               ),
@@ -564,8 +600,8 @@ class _HomeScreenState extends State<HomeScreen> {
             TextButton(
               onPressed: () => AuthModal.show(context),
               style: TextButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
+                backgroundColor: isDark ? Colors.white : AppColors.brandIndigo,
+                foregroundColor: isDark ? Colors.black : Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
@@ -582,21 +618,21 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.success.withOpacity(0.35)),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.all_inclusive_rounded, color: AppColors.success, size: 22),
-            SizedBox(width: 12),
+            const Icon(Icons.all_inclusive_rounded, color: AppColors.success, size: 22),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Google Account Verified',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    style: TextStyle(color: AppColors.txtPrimary(context), fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                   Text(
                     '100% Unlimited Free Random Chat • VIP filter requires coins',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                    style: TextStyle(color: AppColors.txtSecondary(context), fontSize: 11),
                   ),
                 ],
               ),
@@ -608,7 +644,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Top Navigation Bar (Modern glassmorphic pills)
+  // Top Navigation Bar (Modern glassmorphic pills with System Theme toggle)
   // ---------------------------------------------------------------------------
   Widget _buildTopNavBar(bool isGuest) {
     return Padding(
@@ -616,20 +652,38 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left: Safety Lab & Coin Balance Pill
-          Row(
+          // Left: Safety Lab, Coin Balance, and Theme Switcher (System / Black / White)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildNavPill(
                 icon: Icons.shield_rounded,
                 label: 'Safety Lab',
                 onTap: () => EulaModal.checkAndShow(context, onAccepted: () {}),
               ),
-              const SizedBox(width: 10),
               _buildNavPill(
                 icon: Icons.monetization_on_rounded,
-                label: '${_profile?.coins ?? 120} Coins',
+                label: '${_profile?.coins ?? 120}',
                 accentColor: AppColors.coinGold,
                 onTap: () => ShopModal.show(context),
+              ),
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: AppTheme.themeModeNotifier,
+                builder: (context, mode, _) {
+                  final icon = mode == ThemeMode.system
+                      ? Icons.brightness_auto_rounded
+                      : (mode == ThemeMode.dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded);
+                  final label = mode == ThemeMode.system
+                      ? 'System'
+                      : (mode == ThemeMode.dark ? 'Black' : 'White');
+                  return _buildNavPill(
+                    icon: icon,
+                    label: label,
+                    onTap: () => AppTheme.cycleThemeMode(),
+                  );
+                },
               ),
             ],
           ),
@@ -644,9 +698,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.black.withOpacity(0.08),
                       blurRadius: 10,
                       offset: const Offset(0, 2),
                     ),
@@ -668,9 +723,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                gradient: AppColors.darkCardGradient,
+                gradient: AppColors.cardGrad(context),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
+                border: Border.all(color: AppColors.border(context)),
               ),
               child: Row(
                 children: [
@@ -685,7 +740,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 8),
                   Text(
                     _profile?.nickname ?? 'User',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    style: TextStyle(
+                      color: AppColors.txtPrimary(context),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -701,27 +760,42 @@ class _HomeScreenState extends State<HomeScreen> {
     required VoidCallback onTap,
     Color? accentColor,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pillBg = isDark ? AppColors.darkSurface.withOpacity(0.85) : Colors.white;
+    final pillBorder = isDark ? AppColors.darkSurfaceBorder : AppColors.lightSurfaceBorder;
+    final textColor = accentColor ?? (isDark ? Colors.white : AppColors.lightTextPrimary);
+    final iconColor = accentColor ?? (isDark ? Colors.white70 : AppColors.lightTextSecondary);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: AppColors.surface.withOpacity(0.8),
+          color: pillBg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: accentColor != null ? accentColor.withOpacity(0.4) : AppColors.surfaceBorder,
+            color: accentColor != null ? accentColor.withOpacity(0.4) : pillBorder,
           ),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: accentColor ?? Colors.white70),
-            const SizedBox(width: 6),
+            Icon(icon, size: 15, color: iconColor),
+            const SizedBox(width: 5),
             Text(
               label,
               style: TextStyle(
-                color: accentColor ?? Colors.white,
+                color: textColor,
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
               ),
@@ -733,18 +807,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Camera Preview Card (Sleek portrait with gradient glowing border)
+  // Camera Preview Card (Sleek portrait with glowing border)
   // ---------------------------------------------------------------------------
   Widget _buildCameraPreviewCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       height: 350,
       decoration: BoxDecoration(
-        color: Colors.black,
+        color: isDark ? Colors.black : Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: AppColors.brandIndigo.withOpacity(0.6), width: 1.5),
+        border: Border.all(
+          color: isDark ? AppColors.brandIndigo.withOpacity(0.6) : AppColors.brandIndigo.withOpacity(0.4),
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.brandIndigo.withOpacity(0.25),
+            color: AppColors.brandIndigo.withOpacity(isDark ? 0.25 : 0.12),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -763,12 +842,18 @@ class _HomeScreenState extends State<HomeScreen> {
             )
           else
             Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF14172B), Color(0xFF0F1222)],
-                ),
+              decoration: BoxDecoration(
+                gradient: isDark
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF14172B), Color(0xFF0F1222)],
+                      )
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFF8FAFC), Color(0xFFF1F5F9)],
+                      ),
               ),
               child: Center(
                 child: Column(
@@ -777,20 +862,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppColors.brandIndigo.withOpacity(0.15),
+                        color: AppColors.brandIndigo.withOpacity(0.12),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.videocam_rounded, size: 44, color: AppColors.brandPink),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       'Ready to Video Chat',
-                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'Tap Start Video Chat to allow camera & connect',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                      style: TextStyle(
+                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
@@ -804,9 +896,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
+                color: (isDark ? Colors.black : Colors.white).withOpacity(0.85),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white12),
+                border: Border.all(color: isDark ? Colors.white12 : AppColors.lightSurfaceBorder),
               ),
               child: Row(
                 children: [
@@ -818,7 +910,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 6),
                   Text(
                     _previewTrack != null ? 'Camera Active' : 'Ready to Connect',
-                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -859,21 +955,30 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: AppColors.darkCardGradient,
+        gradient: AppColors.cardGrad(context),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.surfaceBorder),
+        border: Border.all(color: AppColors.border(context)),
+        boxShadow: AppColors.isDark(context)
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'I want to talk to:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.txtPrimary(context)),
               ),
-              Flexible(
+              const Flexible(
                 child: Text(
                   'VIP unlocks specific gender',
                   style: TextStyle(fontSize: 11, color: AppColors.coinGold, fontWeight: FontWeight.w600),
@@ -909,12 +1014,12 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             gradient: isSelected ? AppColors.primaryGradient : null,
-            color: isSelected ? null : AppColors.surfaceElevated,
+            color: isSelected ? null : AppColors.surfElevated(context),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isSelected
                   ? Colors.white.withOpacity(0.8)
-                  : (isVip ? AppColors.coinGold.withOpacity(0.35) : AppColors.surfaceBorder),
+                  : (isVip ? AppColors.coinGold.withOpacity(0.35) : AppColors.border(context)),
               width: isSelected ? 1.5 : 1,
             ),
             boxShadow: isSelected
@@ -931,8 +1036,8 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : AppColors.txtPrimary(context),
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
@@ -960,16 +1065,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: AppColors.darkCardGradient,
+        gradient: AppColors.cardGrad(context),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.surfaceBorder),
+        border: Border.all(color: AppColors.border(context)),
+        boxShadow: AppColors.isDark(context)
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'I am a:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.txtPrimary(context)),
           ),
           const SizedBox(height: 10),
           Row(
@@ -998,10 +1112,10 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             gradient: isSelected ? AppColors.cyanBlueGradient : null,
-            color: isSelected ? null : AppColors.surfaceElevated,
+            color: isSelected ? null : AppColors.surfElevated(context),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isSelected ? Colors.white : AppColors.surfaceBorder,
+              color: isSelected ? Colors.white : AppColors.border(context),
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -1011,7 +1125,7 @@ class _HomeScreenState extends State<HomeScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: isSelected ? Colors.white : AppColors.textSecondary,
+              color: isSelected ? Colors.white : AppColors.txtSecondary(context),
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               fontSize: 11,
             ),
@@ -1028,14 +1142,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Row(
+        Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Topics & Interests:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
+            Text('Topics & Interests:', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.txtPrimary(context), fontSize: 14)),
             Flexible(
               child: Text(
                 'Shared tags match faster',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                style: TextStyle(color: AppColors.txtMuted(context), fontSize: 11),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -1051,16 +1165,16 @@ class _HomeScreenState extends State<HomeScreen> {
               selected: isSelected,
               label: Text('#$interest'),
               labelStyle: TextStyle(
-                color: isSelected ? Colors.white : AppColors.textSecondary,
+                color: isSelected ? Colors.white : AppColors.txtSecondary(context),
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 fontSize: 12,
               ),
-              backgroundColor: AppColors.surfaceElevated,
+              backgroundColor: AppColors.surfElevated(context),
               selectedColor: AppColors.brandIndigo,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
                 side: BorderSide(
-                  color: isSelected ? AppColors.brandIndigo : AppColors.surfaceBorder,
+                  color: isSelected ? AppColors.brandIndigo : AppColors.border(context),
                 ),
               ),
               onSelected: (selected) {

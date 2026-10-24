@@ -52,46 +52,69 @@ class AgeConsentModal extends StatefulWidget {
   }
 
   static void showUnderageBlockedDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
+      builder: (ctx) => Dialog(
+        backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: AppColors.danger, width: 2),
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.danger, width: 1.5),
         ),
-        title: const Row(
-          children: [
-            Icon(Icons.block_flipped, color: AppColors.danger, size: 28),
-            SizedBox(width: 10),
-            Text(
-              'Access Denied (18+)',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Baatkry is an adult platform exclusively for users aged 18 and older.',
-              style: TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Our zero-tolerance policy strictly prohibits minors from accessing video chatting or purchasing coins. You cannot use this application.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close', style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.bold)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 360),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.block_flipped, color: AppColors.danger, size: 22),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Access Denied (18+)',
+                      style: TextStyle(
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Baatkry is strictly an adult community for users 18 and older. Minors are strictly prohibited from video chat.',
+                style: TextStyle(
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.danger,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -108,7 +131,6 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
   @override
   void initState() {
     super.initState();
-    // Do NOT pre-fill date of birth. User must enter it according to their birth certificate.
     _selectedDob = null;
     _calculatedAge = null;
     _confirmedTerms = false;
@@ -128,28 +150,39 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
 
   Future<void> _pickDateOfBirth() async {
     final now = DateTime.now();
-    // Default initial date picker position to 18 years ago for easy selection
     final initialPickerDate = _selectedDob ?? DateTime(now.year - 18, now.month, now.day);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final picked = await showDatePicker(
       context: context,
       initialDate: initialPickerDate,
       firstDate: DateTime(now.year - 100),
       lastDate: now,
-      helpText: 'ENTER DATE OF BIRTH (BIRTH CERTIFICATE)',
+      helpText: 'BIRTH CERTIFICATE DATE',
       cancelText: 'Cancel',
       confirmText: 'Confirm',
       fieldLabelText: 'Birth Date (DD/MM/YYYY)',
       builder: (context, child) {
         return Theme(
-          data: ThemeData.dark().copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: AppColors.brandIndigo,
-              onPrimary: Colors.white,
-              surface: AppColors.surface,
-              onSurface: Colors.white,
-            ),
-            dialogBackgroundColor: AppColors.surface,
-          ),
+          data: isDark
+              ? ThemeData.dark().copyWith(
+                  colorScheme: const ColorScheme.dark(
+                    primary: AppColors.brandIndigo,
+                    onPrimary: Colors.white,
+                    surface: AppColors.darkSurface,
+                    onSurface: Colors.white,
+                  ),
+                  dialogBackgroundColor: AppColors.darkSurface,
+                )
+              : ThemeData.light().copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: AppColors.brandIndigo,
+                    onPrimary: Colors.white,
+                    surface: Colors.white,
+                    onSurface: AppColors.lightTextPrimary,
+                  ),
+                  dialogBackgroundColor: Colors.white,
+                ),
           child: child!,
         );
       },
@@ -196,312 +229,266 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Dialog(
-      backgroundColor: AppColors.surface,
+      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(22),
         side: BorderSide(
-          color: _isUnderage ? AppColors.danger : AppColors.brandIndigo,
-          width: 1.5,
+          color: _isUnderage
+              ? AppColors.danger
+              : (isDark ? AppColors.darkSurfaceBorder : AppColors.lightSurfaceBorder),
+          width: 1.2,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 380),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Top Badge Header
+            // Modern Compact Header
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
                     gradient: _isUnderage ? null : AppColors.primaryGradient,
                     color: _isUnderage ? AppColors.danger : null,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Text('🔞', style: TextStyle(fontSize: 22)),
+                  child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 18),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '18+ Age Verification',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                      Text(
-                        _selectedDob == null
-                            ? 'Official Birth Certificate Required'
-                            : (_isAdult ? 'Adult Community Verified' : 'Underage Restricted (<18)'),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _isUnderage ? AppColors.danger : AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '18+ Age Consent',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => Navigator.of(context).pop(),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 8),
 
-            const Text(
-              'Baatkry is an adult platform. You must enter your exact Date of Birth according to your official birth certificate before you can proceed.',
-              style: TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+            // Subtle description
+            Text(
+              'Enter your date of birth from your official birth certificate to verify 18+ access.',
+              style: TextStyle(
+                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                fontSize: 12,
+                height: 1.35,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // Date of birth selection card
+            // Sleek Interactive Date Picker Input Card
             InkWell(
               onTap: _pickDateOfBirth,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(16),
+                  color: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: _selectedDob == null
-                        ? AppColors.brandIndigo
+                        ? (isDark ? AppColors.darkSurfaceBorder : AppColors.lightSurfaceBorder)
                         : (_isAdult ? AppColors.success : AppColors.danger),
-                    width: 1.5,
+                    width: 1.2,
                   ),
-                  boxShadow: _selectedDob == null
-                      ? [
-                          BoxShadow(
-                            color: AppColors.brandIndigo.withOpacity(0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: _selectedDob == null
-                            ? AppColors.brandIndigo.withOpacity(0.15)
-                            : (_isAdult ? AppColors.success : AppColors.danger).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        _selectedDob == null
-                            ? Icons.calendar_month_rounded
-                            : (_isAdult ? Icons.verified_user_rounded : Icons.cancel_rounded),
-                        color: _selectedDob == null
-                            ? AppColors.brandPink
-                            : (_isAdult ? AppColors.success : AppColors.danger),
-                        size: 26,
-                      ),
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      color: _selectedDob == null
+                          ? AppColors.brandIndigo
+                          : (_isAdult ? AppColors.success : AppColors.danger),
+                      size: 20,
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
                             _selectedDob == null
-                                ? 'Date of Birth (Birth Certificate):'
-                                : 'Birth Certificate Date (Tap to change):',
-                            style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            _selectedDob == null
-                                ? 'Tap to enter your birth date'
+                                ? 'Date of Birth (Birth Certificate)'
                                 : '${_selectedDob!.day.toString().padLeft(2, '0')}/${_selectedDob!.month.toString().padLeft(2, '0')}/${_selectedDob!.year}',
                             style: TextStyle(
-                              color: _selectedDob == null ? AppColors.brandPrimary : Colors.white,
+                              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                               fontWeight: FontWeight.bold,
-                              fontSize: _selectedDob == null ? 14 : 16,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            _selectedDob == null
+                                ? 'Tap to select your date of birth'
+                                : 'Age: $_calculatedAge years old',
+                            style: TextStyle(
+                              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                              fontSize: 11,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    if (_selectedDob == null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Enter',
-                              style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(width: 4),
-                            Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 11),
-                          ],
-                        ),
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: (_isAdult ? AppColors.success : AppColors.danger).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _isAdult ? AppColors.success : AppColors.danger),
-                        ),
-                        child: Text(
-                          '$_calculatedAge Years Old',
-                          style: TextStyle(
-                            color: _isAdult ? AppColors.success : AppColors.danger,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _selectedDob == null
+                            ? AppColors.brandIndigo.withOpacity(0.12)
+                            : (_isAdult ? AppColors.success : AppColors.danger).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _selectedDob == null
+                            ? 'Select'
+                            : (_isAdult ? 'Verified 18+ ✓' : 'Under 18 ✕'),
+                        style: TextStyle(
+                          color: _selectedDob == null
+                              ? AppColors.brandIndigo
+                              : (_isAdult ? AppColors.success : AppColors.danger),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 14),
 
-            // Status feedback banner
-            if (_selectedDob == null)
+            // Underage alert chip if <18
+            if (_isUnderage) ...[
+              const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 decoration: BoxDecoration(
-                  color: AppColors.brandIndigo.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.brandIndigo.withOpacity(0.35)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline_rounded, color: AppColors.brandIndigo, size: 20),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Step 1: Enter your birth date above as recorded on your official birth certificate.',
-                        style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else if (_isUnderage)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.danger.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.danger.withOpacity(0.5)),
+                  color: AppColors.danger.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 20),
-                    const SizedBox(width: 10),
+                    const Icon(Icons.cancel_rounded, color: AppColors.danger, size: 15),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Underage Restricted: You are $_calculatedAge years old according to your birth certificate. You cannot enter Baatkry.',
-                        style: const TextStyle(color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.success.withOpacity(0.35)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Age Verified: You are $_calculatedAge years old and meet the 18+ requirement.',
-                        style: const TextStyle(color: AppColors.success, fontSize: 12, fontWeight: FontWeight.w600),
+                        'Underage ($_calculatedAge yrs). Minors cannot enter Baatkry.',
+                        style: const TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
                 ),
               ),
+            ],
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
-            // Checkbox for terms
+            // Compact Checkbox row
             Row(
               children: [
-                Checkbox(
-                  value: _confirmedTerms,
-                  activeColor: AppColors.brandIndigo,
-                  onChanged: _selectedDob == null
-                      ? null
-                      : (val) => setState(() => _confirmedTerms = val ?? true),
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Checkbox(
+                    value: _confirmedTerms,
+                    activeColor: AppColors.brandIndigo,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    onChanged: _selectedDob == null
+                        ? null
+                        : (val) => setState(() => _confirmedTerms = val ?? true),
+                  ),
                 ),
-                const Expanded(
+                const SizedBox(width: 8),
+                Expanded(
                   child: Text(
-                    'I certify this date of birth matches my official birth certificate and I am 18+.',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                    'I certify I am 18+ and this matches my birth certificate.',
+                    style: TextStyle(
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // Action Buttons
+            // Action Button
             if (_selectedDob == null)
-              ElevatedButton(
-                onPressed: _pickDateOfBirth,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.surfaceElevated,
-                  side: const BorderSide(color: AppColors.brandIndigo, width: 1.5),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.edit_calendar_rounded, color: AppColors.brandPink, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Enter Date of Birth to Proceed',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
-                    ),
-                  ],
+                child: ElevatedButton(
+                  onPressed: _pickDateOfBirth,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.calendar_today_rounded, size: 16, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        'Enter Date of Birth',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else if (_isAdult)
               Container(
                 decoration: BoxDecoration(
                   gradient: _confirmedTerms ? AppColors.primaryGradient : null,
-                  color: _confirmedTerms ? null : AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: _confirmedTerms
-                      ? [
-                          BoxShadow(
-                            color: AppColors.brandIndigo.withOpacity(0.35),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ]
-                      : null,
+                  color: _confirmedTerms
+                      ? null
+                      : (isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: ElevatedButton(
                   onPressed: _confirmedTerms ? _onAcceptAndProceed : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     shadowColor: Colors.transparent,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text(
-                    'I am 18+ & Accept Terms (Proceed)',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Confirm & Enter (18+)',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                      ),
+                      SizedBox(width: 6),
+                      Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.white),
+                    ],
                   ),
                 ),
               )
@@ -510,12 +497,12 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 onPressed: _blockAsUnderage,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.danger,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: const Text(
-                  'I am Under 18 (Exit App)',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                  'Exit App (< 18)',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
                 ),
               ),
           ],

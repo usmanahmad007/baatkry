@@ -70,11 +70,13 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.meshBackgroundGradient,
+        decoration: BoxDecoration(
+          gradient: AppColors.meshGrad(context),
         ),
         child: SafeArea(
           child: Column(
@@ -87,14 +89,20 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        gradient: AppColors.darkCardGradient,
+                        gradient: AppColors.cardGrad(context),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
+                        border: Border.all(color: AppColors.border(context)),
                       ),
                       child: Row(
                         children: [
-                          const Text('⚡ Live Matchmaking',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text(
+                            '⚡ Live Matchmaking',
+                            style: TextStyle(
+                              color: AppColors.txtPrimary(context),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                           if (widget.genderFilter != 'everyone') ...[
                             const SizedBox(width: 8),
                             Container(
@@ -113,7 +121,11 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                        size: 28,
+                      ),
                       onPressed: _onCancel,
                     ),
                   ],
@@ -141,7 +153,7 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: AppColors.brandIndigo.withOpacity(0.7),
+                                    color: AppColors.brandIndigo.withOpacity(isDark ? 0.7 : 0.4),
                                     width: 2,
                                   ),
                                 ),
@@ -176,7 +188,11 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
               const SizedBox(height: 36),
               Text(
                 _statusText,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.txtPrimary(context),
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -184,7 +200,10 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
                     ? 'Connecting with random strangers worldwide...'
                     : 'Searching for ${widget.genderFilter} online now...',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.txtSecondary(context),
+                ),
               ),
               const Spacer(),
               Padding(
@@ -195,11 +214,17 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
                     onPressed: _onCancel,
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      side: const BorderSide(color: AppColors.surfaceBorder, width: 1.5),
+                      side: BorderSide(color: AppColors.border(context), width: 1.5),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      backgroundColor: AppColors.surfaceElevated.withOpacity(0.6),
+                      backgroundColor: AppColors.surfElevated(context),
                     ),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: AppColors.txtPrimary(context),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ),
