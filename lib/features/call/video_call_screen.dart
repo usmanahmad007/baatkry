@@ -100,8 +100,20 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       return;
     }
 
+    _startLocalCamera();
     _initCall();
     _startCallTimer();
+  }
+
+  Future<void> _startLocalCamera() async {
+    try {
+      final track = await _liveKit.startLocalPreview();
+      if (mounted && track != null) {
+        setState(() => _localVideoTrack = track);
+      }
+    } catch (e) {
+      debugPrint('[VideoCallScreen] _startLocalCamera error: $e');
+    }
   }
 
   void _startCallTimer() {
@@ -732,7 +744,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         if (mounted) setState(() => _localVideoTrack = localPub!.track);
       } else if (_localVideoTrack == null || _localVideoTrack!.isDisposed) {
         final track = await _liveKit.startLocalPreview();
-        if (mounted) setState(() => _localVideoTrack = track);
+        if (mounted && track != null) setState(() => _localVideoTrack = track);
       }
     } catch (e) {
       debugPrint('[VideoCallScreen] Connection error: $e');
@@ -766,6 +778,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _chatSub?.cancel();
     _peerDisconnectedSub?.cancel();
     _liveKit.disconnect();
+    _liveKit.stopLocalPreview();
     _textController.dispose();
     _chatScrollController.dispose();
     super.dispose();
@@ -789,18 +802,33 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       }
     }
 
-    // Smooth in-place transition: Do NOT reload the screen!
-    setState(() {
-      _isSearchingNext = true;
-      _remoteVideoTrack = null;
-      _messages.clear();
-      _callElapsedSeconds = 0;
-      _isLiked = false;
-    });
+    // Smooth in-place stranger transition:
+    // Keep local camera display active continuously without turning black!
+    final preview = await _liveKit.startLocalPreview();
+    if (mounted) {
+      setState(() {
+        if (preview != null) {
+          _localVideoTrack = preview;
+        }
+        _isSearchingNext = true;
+        _remoteVideoTrack = null;
+        _messages.clear();
+        _callElapsedSeconds = 0;
+        _isLiked = false;
+      });
+    }
 
     // Disconnect previous room cleanly
     await _liveKit.disconnect();
     if (!mounted) return;
+
+    // Ensure local video track is active (never black)
+    if (_localVideoTrack == null || _localVideoTrack!.isDisposed) {
+      final fallbackTrack = await _liveKit.startLocalPreview();
+      if (mounted && fallbackTrack != null) {
+        setState(() => _localVideoTrack = fallbackTrack);
+      }
+    }
 
     // Listen for next match
     _matchSub?.cancel();

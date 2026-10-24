@@ -193,10 +193,15 @@ class LiveKitService {
     if (_room?.localParticipant != null) {
       final videoTrack = _room!.localParticipant!.videoTrackPublications.firstOrNull?.track;
       if (videoTrack != null) {
-        await videoTrack.restartTrack(CameraCaptureOptions(cameraPosition: _cameraPosition));
+        try {
+          await videoTrack.restartTrack(CameraCaptureOptions(cameraPosition: _cameraPosition));
+        } catch (_) {}
       }
-    } else if (_previewTrack != null) {
-      await _previewTrack!.restartTrack(CameraCaptureOptions(cameraPosition: _cameraPosition));
+    }
+    if (_previewTrack != null && !_previewTrack!.isDisposed) {
+      try {
+        await _previewTrack!.restartTrack(CameraCaptureOptions(cameraPosition: _cameraPosition));
+      } catch (_) {}
     }
   }
 

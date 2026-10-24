@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/livekit_service.dart';
+import '../../services/permission_service.dart';
 import '../../services/supabase_service.dart';
 
 class AgeConsentModal extends StatefulWidget {
@@ -210,6 +212,13 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
 
     await SupabaseService.instance.updateProfile(age: _calculatedAge);
 
+    // Warm up camera & mic permission directly inside this single modal
+    // so no second dialog or repeated permission prompts occur
+    try {
+      await LiveKitService.instance.startLocalPreview();
+    } catch (_) {}
+    await PermissionService.instance.markPermissionHandled(granted: true);
+
     if (mounted) {
       Navigator.of(context).pop();
       widget.onVerified();
@@ -265,7 +274,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '18+ Age Consent',
+                    '18+ Verification & Video Access',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -291,7 +300,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
 
             // Subtle description
             Text(
-              'Enter your date of birth from your official birth certificate to verify 18+ access.',
+              'Enter your birth certificate date of birth to verify 18+ access and enable live video chat.',
               style: TextStyle(
                 color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                 fontSize: 12,
@@ -423,7 +432,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'I certify I am 18+ and this matches my birth certificate.',
+                    'I certify I am 18+ (birth certificate) and grant camera & mic access.',
                     style: TextStyle(
                       color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                       fontSize: 11,
@@ -483,7 +492,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Confirm & Enter (18+)',
+                        'Confirm & Enter Video Chat (18+)',
                         style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
                       ),
                       SizedBox(width: 6),

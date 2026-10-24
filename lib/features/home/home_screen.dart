@@ -8,7 +8,6 @@ import '../../core/theme/app_theme.dart';
 import '../../models/user_profile.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
-import '../../services/permission_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
 import '../matchmaking/radar_screen.dart';
@@ -57,127 +56,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _showOneTimePermissionDialog({required VoidCallback onAllowed}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-          side: BorderSide(
-            color: isDark ? AppColors.brandIndigo : AppColors.brandIndigo.withOpacity(0.4),
-            width: 1.2,
-          ),
-        ),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 380),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Camera & Mic Access',
-                      style: TextStyle(
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Baatkry connects you face-to-face with people worldwide for live video chat.',
-                style: TextStyle(
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                  fontSize: 13,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark ? AppColors.darkSurfaceBorder : AppColors.lightSurfaceBorder,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.verified_rounded, color: AppColors.success, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Asked once and saved. You will not be asked again.',
-                        style: TextStyle(
-                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: Text(
-                      'Cancel',
-                      style: TextStyle(color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                      ),
-                      onPressed: () async {
-                        Navigator.of(ctx).pop();
-                        await PermissionService.instance.requestCombinedPermissions();
-                        onAllowed();
-                      },
-                      child: const Text('Allow & Continue', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _profileSub?.cancel();
@@ -186,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onStartMatching() {
-    // 1. Consent Gate: Prompt user to verify 18+ and enter Date of Birth (from birth certificate)
+    // 1. Consent & Verification Gate: Prompt user to verify 18+ and grant camera & mic
     AgeConsentModal.checkAndShow(context, onVerified: () async {
       // 2. Check guest trial talk time limit
       final isGuest = _profile?.isAnonymous ?? true;
@@ -200,25 +78,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!mounted) return;
 
-      // 3. One-time Camera & Mic Permission check right before moving to chat
-      _checkPermissionAndProceed();
-    });
-  }
-
-  void _checkPermissionAndProceed() {
-    final hasRequested = PermissionService.instance.hasRequested;
-
-    if (!hasRequested) {
-      // Prompt permission only once when entering chat
-      _showOneTimePermissionDialog(
-        onAllowed: () {
-          _proceedToMatchingScreen();
-        },
-      );
-    } else {
-      // Already granted, move directly to matching without asking again
+      // 3. Move directly to matching screen in one seamless step
       _proceedToMatchingScreen();
-    }
+    });
   }
 
   void _proceedToMatchingScreen() {
