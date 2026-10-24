@@ -12,7 +12,6 @@ import '../../services/livekit_service.dart';
 import '../../services/matchmaking_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
-import '../matchmaking/radar_screen.dart';
 import '../moderation/eula_modal.dart';
 import '../moderation/report_modal.dart';
 import '../shop/shop_modal.dart';
@@ -43,9 +42,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   StreamSubscription<ChatMessage>? _chatSub;
   StreamSubscription<void>? _peerDisconnectedSub;
   StreamSubscription<UserProfile?>? _profileSub;
+  StreamSubscription<MatchResult>? _matchSub;
 
   VideoTrack? _remoteVideoTrack;
   LocalVideoTrack? _localVideoTrack;
+
+  // Active Match Result (smooth in-place transition without reloading screen)
+  late MatchResult _activeMatchResult;
+  bool _isSearchingNext = false;
 
   // Call Timers & Economy
   int _callElapsedSeconds = 0; // Current person call elapsed seconds
@@ -65,6 +69,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   @override
   void initState() {
     super.initState();
+    _activeMatchResult = widget.matchResult;
     final filter = widget.genderFilter.toLowerCase().trim();
     final requestedVip = filter.isNotEmpty && filter != 'everyone' && filter != 'unspecified';
     final initialCoins = SupabaseService.instance.currentProfile?.coins ?? widget.myProfile.coins;
@@ -701,24 +706,31 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     });
 
     _peerDisconnectedSub = _liveKit.peerDisconnectedStream.listen((_) {
-      if (mounted) {
+      if (mounted && !_isSearchingNext) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('User skipped. Finding next match...')),
+          const SnackBar(
+            content: Text('Stranger skipped. Finding next match...'),
+            duration: Duration(seconds: 1),
+          ),
         );
         _onSkipToNext();
       }
     });
 
+    await _connectToRoom(_activeMatchResult);
+  }
+
+  Future<void> _connectToRoom(MatchResult match) async {
     try {
       await _liveKit.connect(
-        roomName: widget.matchResult.roomId,
-        token: widget.matchResult.token,
+        roomName: match.roomId,
+        token: match.token,
       );
 
       final localPub = _liveKit.room?.localParticipant?.videoTrackPublications.firstOrNull;
       if (localPub?.track != null) {
-        setState(() => _localVideoTrack = localPub!.track);
-      } else {
+        if (mounted) setState(() => _localVideoTrack = localPub!.track);
+      } else if (_localVideoTrack == null || _localVideoTrack!.isDisposed) {
         final track = await _liveKit.startLocalPreview();
         if (mounted) setState(() => _localVideoTrack = track);
       }
@@ -743,6 +755,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void dispose() {
     _callTimer?.cancel();
     _profileSub?.cancel();
+    _matchSub?.cancel();
     if (_isGenderFiltered) {
       SupabaseService.instance.updateCoinsBalance(_coinsRemaining);
     }
@@ -759,11 +772,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   }
 
   void _onSkipToNext() async {
+    if (_isSearchingNext) return;
+
+    _callTimer?.cancel();
+
     if (_isGenderFiltered) {
       await SupabaseService.instance.updateCoinsBalance(_coinsRemaining);
     }
-    await _liveKit.disconnect();
-    if (!mounted) return;
 
     if (_isGuest) {
       await GuestSessionService.instance.recordSecondsUsed(_guestTotalSecondsUsed);
@@ -774,25 +789,54 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       }
     }
 
+    // Smooth in-place transition: Do NOT reload the screen!
+    setState(() {
+      _isSearchingNext = true;
+      _remoteVideoTrack = null;
+      _messages.clear();
+      _callElapsedSeconds = 0;
+      _isLiked = false;
+    });
+
+    // Disconnect previous room cleanly
+    await _liveKit.disconnect();
+    if (!mounted) return;
+
+    // Listen for next match
+    _matchSub?.cancel();
+    _matchSub = MatchmakingService.instance.matchStream.listen((newResult) async {
+      _matchSub?.cancel();
+      if (!mounted) return;
+
+      setState(() {
+        _activeMatchResult = newResult;
+      });
+
+      await _connectToRoom(newResult);
+
+      if (mounted) {
+        setState(() {
+          _isSearchingNext = false;
+        });
+        _startCallTimer();
+      }
+    });
+
     final currentProf = SupabaseService.instance.currentProfile ?? widget.myProfile;
     final updatedProf = currentProf.copyWith(coins: _coinsRemaining);
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => RadarScreen(
-          profile: updatedProf,
-          genderFilter: _activeGenderFilter,
-        ),
-      ),
+    MatchmakingService.instance.findMatch(
+      myProfile: updatedProf,
+      genderFilter: _activeGenderFilter,
     );
   }
 
   void _onReportUser() {
     ReportModal.show(
       context,
-      peerId: widget.matchResult.peerId,
-      peerName: widget.matchResult.peerName,
-      roomId: widget.matchResult.roomId,
+      peerId: _activeMatchResult.peerId,
+      peerName: _activeMatchResult.peerName,
+      roomId: _activeMatchResult.roomId,
       onReportSubmitted: () {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -809,10 +853,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     final text = quickText ?? _textController.text.trim();
     if (text.isEmpty) return;
 
+    final currentProf = SupabaseService.instance.currentProfile ?? widget.myProfile;
     _liveKit.sendChatMessage(
       text,
-      myId: widget.myProfile.id,
-      myName: widget.myProfile.nickname,
+      myId: currentProf.id,
+      myName: currentProf.nickname,
     );
 
     if (quickText == null) {
@@ -926,9 +971,16 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-          // Left Pills: Safety Lab, Theater Mode, Free Coins
+          // Left Pills: Exit, Safety Lab, Theater Mode, Coins
           Row(
             children: [
+              _buildNavPill(
+                icon: Icons.logout_rounded,
+                label: 'Exit',
+                accentColor: AppColors.danger,
+                onTap: () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(width: 8),
               _buildNavPill(
                 icon: Icons.shield_rounded,
                 label: 'Safety Lab',
@@ -1371,8 +1423,65 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Remote Peer Video Feed
-          if (_remoteVideoTrack != null)
+          // Remote Peer Video Feed or In-Place Searching Next Overlay
+          if (_isSearchingNext)
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF1D1730), Color(0xFF121424)],
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.brandIndigo.withOpacity(0.2),
+                        border: Border.all(color: AppColors.brandIndigo.withOpacity(0.6), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.brandIndigo.withOpacity(0.3),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: const CircularProgressIndicator(
+                        strokeWidth: 3,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.brandCyan),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      _activeGenderFilter == 'everyone'
+                          ? 'Searching next stranger...'
+                          : 'Finding ${_activeGenderFilter.toUpperCase()} 👑...',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _isGenderFiltered
+                          ? 'VIP Mode • 1 coin = 1 second'
+                          : 'Free Unlimited Mode',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (_remoteVideoTrack != null)
             VideoTrackRenderer(
               _remoteVideoTrack!,
               fit: rtc.RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
@@ -1392,13 +1501,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                       radius: 38,
                       backgroundColor: AppColors.brandIndigo,
                       child: Text(
-                        widget.matchResult.peerName.isNotEmpty ? widget.matchResult.peerName[0].toUpperCase() : 'P',
+                        _activeMatchResult.peerName.isNotEmpty ? _activeMatchResult.peerName[0].toUpperCase() : 'P',
                         style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      widget.matchResult.peerName,
+                      _activeMatchResult.peerName,
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     const SizedBox(height: 4),
@@ -1409,93 +1518,94 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             ),
 
           // Top Left Overlay: Avatar, Name, Location, Heart, Badges
-          Positioned(
-            top: 14,
-            left: 14,
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: AppColors.brandIndigo,
-                  child: Text(
-                    widget.matchResult.peerName.isNotEmpty ? widget.matchResult.peerName[0].toUpperCase() : 'R',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+          if (!_isSearchingNext)
+            Positioned(
+              top: 14,
+              left: 14,
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: AppColors.brandIndigo,
+                    child: Text(
+                      _activeMatchResult.peerName.isNotEmpty ? _activeMatchResult.peerName[0].toUpperCase() : 'R',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
+                  const SizedBox(width: 8),
 
-                // Name & Location
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.matchResult.peerName,
-                      style: const TextStyle(
+                  // Name & Location
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _activeMatchResult.peerName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                        ),
+                      ),
+                      const Text(
+                        'Global • Online',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 10),
+
+                  // Heart Button
+                  InkWell(
+                    onTap: () {
+                      setState(() => _isLiked = !_isLiked);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: AppColors.brandPink,
+                          content: Text(_isLiked ? 'Added to friends!' : 'Removed from friends.'),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        gradient: _isLiked ? AppColors.primaryGradient : null,
+                        color: _isLiked ? null : Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                         color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                        size: 16,
                       ),
-                    ),
-                    const Text(
-                      'Global • Online',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10,
-                        shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 10),
-
-                // Heart Button
-                InkWell(
-                  onTap: () {
-                    setState(() => _isLiked = !_isLiked);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        backgroundColor: AppColors.brandPink,
-                        content: Text(_isLiked ? 'Added to friends!' : 'Removed from friends.'),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      gradient: _isLiked ? AppColors.primaryGradient : null,
-                      color: _isLiked ? null : Colors.black54,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: Colors.white,
-                      size: 16,
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
+                  const SizedBox(width: 6),
 
-                // Flag / Report Icon
-                InkWell(
-                  onTap: _onReportUser,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: const BoxDecoration(
-                      color: Colors.black54,
-                      shape: BoxShape.circle,
+                  // Flag / Report Icon
+                  InkWell(
+                    onTap: _onReportUser,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.flag_rounded, color: Colors.white70, size: 16),
                     ),
-                    child: const Icon(Icons.flag_rounded, color: Colors.white70, size: 16),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          // Bottom Left: baatkry.app pill
+          // Bottom Left: baatkry.com pill
           Positioned(
             bottom: 14,
             left: 14,
@@ -1511,7 +1621,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                   Text('⚡', style: TextStyle(fontSize: 14)),
                   SizedBox(width: 6),
                   Text(
-                    'baatkry.app',
+                    'baatkry.com',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                 ],
@@ -1524,13 +1634,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             bottom: 14,
             right: 14,
             child: InkWell(
-              onTap: _onSkipToNext,
+              onTap: _isSearchingNext ? null : _onSkipToNext,
               borderRadius: BorderRadius.circular(16),
               child: Container(
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
+                  gradient: _isSearchingNext ? null : AppColors.primaryGradient,
+                  color: _isSearchingNext ? Colors.white24 : null,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white30, width: 1.5),
                   boxShadow: [
@@ -1541,8 +1652,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                     ),
                   ],
                 ),
-                child: const Icon(
-                  Icons.fast_forward_rounded,
+                child: Icon(
+                  _isSearchingNext ? Icons.hourglass_top_rounded : Icons.fast_forward_rounded,
                   color: Colors.white,
                   size: 26,
                 ),

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PermissionService {
@@ -21,6 +22,28 @@ class PermissionService {
       _isGranted = prefs.getBool(_keyPermissionGranted) ?? false;
     } catch (e) {
       debugPrint('[PermissionService] Failed to load permissions cache: $e');
+    }
+  }
+
+  /// Request both camera and microphone in ONE combined browser getUserMedia call.
+  /// Prevents the browser from prompting twice (once for camera, then once for microphone).
+  Future<bool> requestCombinedPermissions() async {
+    try {
+      final stream = await rtc.navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': true,
+      });
+      for (final track in stream.getTracks()) {
+        try {
+          await track.stop();
+        } catch (_) {}
+      }
+      await markPermissionHandled(granted: true);
+      return true;
+    } catch (e) {
+      debugPrint('[PermissionService] Combined permission error: $e');
+      await markPermissionHandled(granted: false);
+      return false;
     }
   }
 

@@ -161,9 +161,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         shadowColor: Colors.transparent,
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.of(ctx).pop();
-                        PermissionService.instance.markPermissionHandled(granted: true);
+                        await PermissionService.instance.requestCombinedPermissions();
                         onAllowed();
                       },
                       child: const Text('Allow & Continue', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),

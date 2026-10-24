@@ -118,6 +118,11 @@ class LiveKitService {
 
       await room.connect(url, token);
 
+      // If on Web and permissions haven't been pre-granted, request audio+video combined
+      if (kIsWeb && !PermissionService.instance.isGranted) {
+        await PermissionService.instance.requestCombinedPermissions();
+      }
+
       // Publish local camera and mic
       await room.localParticipant?.setCameraEnabled(true);
       await room.localParticipant?.setMicrophoneEnabled(true);

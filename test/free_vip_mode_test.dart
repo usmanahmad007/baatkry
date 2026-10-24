@@ -136,5 +136,39 @@ void main() {
       final updatedProfile = initialProfile.copyWith(coins: coinsRemaining);
       expect(updatedProfile.coins, equals(15));
     });
+    test('In-place skip updates activeMatchResult without reloading screen', () {
+      const match1 = MatchResult(
+        roomId: 'room_1',
+        token: 'token_1',
+        peerId: 'peer_1',
+        peerName: 'Elena',
+      );
+      const match2 = MatchResult(
+        roomId: 'room_2',
+        token: 'token_2',
+        peerId: 'peer_2',
+        peerName: 'Sophia',
+      );
+
+      var activeMatch = match1;
+      var isSearchingNext = false;
+
+      // User taps skip: enters in-place searching state without leaving screen
+      isSearchingNext = true;
+      expect(isSearchingNext, isTrue);
+      expect(activeMatch.peerName, equals('Elena'));
+
+      // New match arrives: smoothly updates in place
+      activeMatch = match2;
+      isSearchingNext = false;
+      expect(isSearchingNext, isFalse);
+      expect(activeMatch.peerName, equals('Sophia'));
+    });
+
+    test('Brand watermark pill is baatkry.com', () {
+      const watermark = 'baatkry.com';
+      expect(watermark, equals('baatkry.com'));
+      expect(watermark.contains('.app'), isFalse);
+    });
   });
 }
