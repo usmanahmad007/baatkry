@@ -42,5 +42,10 @@ void main() {
 
       expect(googleUser.isAnonymous, isFalse);
     });
+
+    test('Default user signup receives 120 initial bonus coins', () {
+      const newUser = UserProfile(id: 'new_user');
+      expect(newUser.coins, 120);
+    });
   });
 }

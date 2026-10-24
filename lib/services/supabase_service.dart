@@ -49,7 +49,7 @@ class SupabaseService {
                     id: user.id,
                     isAnonymous: false,
                     nickname: user.userMetadata?['full_name'] ?? user.email?.split('@').first ?? 'Google User',
-                    coins: 100,
+                    coins: 120, // 120 coins initial signup bonus
                     age: detectedAge,
                     isAgeVerified: detectedAge != null && detectedAge >= 18,
                   );
@@ -90,7 +90,7 @@ class SupabaseService {
     // Local / Offline Guest fallback
     final savedId = prefs.getString('local_user_id') ?? const Uuid().v4();
     final savedNickname = prefs.getString('local_user_nickname') ?? 'Guest #${savedId.substring(0, 5)}';
-    final savedCoins = prefs.getInt('local_user_coins') ?? 50;
+    final savedCoins = prefs.getInt('local_user_coins') ?? 120;
     final savedIsVip = prefs.getBool('local_user_is_vip') ?? false;
     final savedGender = prefs.getString('local_user_gender') ?? 'unspecified';
     final savedInterests = prefs.getStringList('local_user_interests') ?? ['Music', 'Gaming'];
@@ -134,7 +134,7 @@ class SupabaseService {
             id: res.user!.id,
             isAnonymous: true,
             nickname: 'Guest #${res.user!.id.substring(0, 5)}',
-            coins: 50,
+            coins: 120, // 120 starter coins
           );
           _currentProfile = profile;
           _profileController.add(profile);
@@ -240,7 +240,7 @@ class SupabaseService {
                   id: user.id,
                   isAnonymous: false,
                   nickname: user.userMetadata?['full_name'] ?? 'Google User',
-                  coins: 100,
+                  coins: 120, // 120 coins initial signup bonus
                   age: detectedAge,
                   isAgeVerified: detectedAge != null && detectedAge >= 18,
                 );
@@ -274,7 +274,7 @@ class SupabaseService {
           id: 'google_verified_user',
           isAnonymous: false,
           nickname: 'Google Explorer',
-          coins: 100,
+          coins: 120, // Initial signup bonus
           isAgeVerified: true,
           age: 21,
         );
@@ -307,7 +307,7 @@ class SupabaseService {
             id: res.user!.id,
             isAnonymous: false,
             nickname: nickname,
-            coins: 100, // Bonus starter coins for registering
+            coins: 120, // 120 bonus starter coins for registering
           );
           await _client!.from('profiles').upsert(profile.toMap());
           _currentProfile = profile;
@@ -331,7 +331,7 @@ class SupabaseService {
           id: const Uuid().v4(),
           isAnonymous: false,
           nickname: nickname,
-          coins: 100,
+          coins: 120, // Initial bonus
         );
 
     await prefs.setString('local_user_nickname', nickname);
@@ -356,7 +356,7 @@ class SupabaseService {
                 id: res.user!.id,
                 isAnonymous: false,
                 nickname: email.split('@').first,
-                coins: 100,
+                coins: 120,
               );
           _currentProfile = profile;
           _profileController.add(_currentProfile);
@@ -378,7 +378,7 @@ class SupabaseService {
           id: const Uuid().v4(),
           isAnonymous: false,
           nickname: nickname,
-          coins: 100,
+          coins: 120, // Initial bonus
         );
     _profileController.add(_currentProfile);
     return true;

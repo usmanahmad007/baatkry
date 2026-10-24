@@ -53,12 +53,17 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   bool _isTheaterMode = false;
   bool _showMobileChat = false;
 
+  late String _activeGenderFilter;
+  late bool _isGenderFiltered;
+  bool _isGenderPromptShowing = false;
+
   bool get _isGuest => widget.myProfile.isAnonymous;
-  bool get _isGenderFiltered => widget.matchResult.peerGender != 'unspecified';
 
   @override
   void initState() {
     super.initState();
+    _activeGenderFilter = widget.matchResult.peerGender;
+    _isGenderFiltered = widget.matchResult.peerGender != 'unspecified';
     _coinsRemaining = widget.myProfile.coins;
     _guestTotalSecondsUsed = GuestSessionService.instance.cachedSecondsUsed;
 
@@ -110,10 +115,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
         // ---------------------------------------------------------------------
         // LOGGED-IN (GMAIL / GOOGLE) USER RULES:
-        // Free Unlimited Random Video Chat!
-        // Gender-Filtered chat requires coins (1 coin = 1 second)
+        // 1. Random Gender Chat: 100% UNLIMITED, NEVER consumes coins!
+        //    Every 30s prompts user to choose specific gender if they wish.
+        // 2. Specific Gender Chat: Uses coins time ONLY (1 coin = 1 second).
         // ---------------------------------------------------------------------
         if (_isGenderFiltered) {
+          // Specific Gender: use coins time only (1 coin = 1 second)
           if (_coinsRemaining > 0) {
             _coinsRemaining--;
             if (_coinsRemaining % 10 == 0 || _coinsRemaining == 0) {
@@ -122,9 +129,262 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           } else {
             _onGenderCoinsExhausted();
           }
+        } else {
+          // Random Gender: DO NOT USE COINS! Unlimited free chat.
+          // Prompt every 30s to choose a specific gender
+          if (!_isGuest && _callElapsedSeconds > 0 && _callElapsedSeconds % 30 == 0) {
+            _showGenderSwitchPrompt();
+          }
         }
       });
     });
+  }
+
+  /// In random chat, prompt user every 30s to select a specific gender
+  void _showGenderSwitchPrompt() {
+    if (_isGenderPromptShowing || !mounted) return;
+    _isGenderPromptShowing = true;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: AppColors.coinGold, width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.coinGold.withOpacity(0.25),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.vipGoldGradient,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.star_rounded, color: Colors.black, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Choose Specific Gender 👑',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        'Want to connect with someone specific? (1 coin = 1s)',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildGenderChoiceButton(
+                    sheetContext,
+                    gender: 'women',
+                    label: 'Women 👑',
+                    icon: Icons.female_rounded,
+                    gradient: const LinearGradient(colors: [Color(0xFFEC4899), Color(0xFFF43F5E)]),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildGenderChoiceButton(
+                    sheetContext,
+                    gender: 'men',
+                    label: 'Men 👑',
+                    icon: Icons.male_rounded,
+                    gradient: const LinearGradient(colors: [Color(0xFF3B82F6), Color(0xFF6366F1)]),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildGenderChoiceButton(
+                    sheetContext,
+                    gender: 'transgender',
+                    label: 'Trans 👑',
+                    icon: Icons.transgender_rounded,
+                    gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFFA855F7)]),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Your Balance: $_coinsRemaining Coins',
+                  style: const TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  child: const Text('Stay in Random Chat', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      _isGenderPromptShowing = false;
+    });
+  }
+
+  Widget _buildGenderChoiceButton(
+    BuildContext sheetCtx, {
+    required String gender,
+    required String label,
+    required IconData icon,
+    required LinearGradient gradient,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        onPressed: () {
+          Navigator.of(sheetCtx).pop();
+          _onSelectSpecificGender(gender);
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _onSelectSpecificGender(String gender) {
+    if (_coinsRemaining <= 0) {
+      // User has NO coins: Ask user to add coins by opening topup!
+      _showTopupRequiredDialog(gender);
+    } else {
+      // User HAS coins: apply gender filter and match with that specific gender!
+      setState(() {
+        _activeGenderFilter = gender;
+        _isGenderFiltered = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.coinGold,
+          content: Text(
+            'Filtering by ${gender.toUpperCase()} 👑 (1 coin = 1 second remaining: ${_coinsRemaining}s). Finding match...',
+            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      _onSkipToNext();
+    }
+  }
+
+  void _showTopupRequiredDialog(String gender) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.coinGold, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 26),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Top-up Required 🪙',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You have 0 coins. To talk with ${gender.toUpperCase()}, you need coins (1 coin = 1 second).',
+              style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Add coins via our top-up packages (minimum 500 Rs for 60 minutes). Or continue enjoying free unlimited random chat!',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Free Unlimited', style: TextStyle(color: Colors.white70)),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: AppColors.vipGoldGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                ShopModal.show(context);
+              },
+              child: const Text('Top-up Coins', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Guest 30-second per-person limit reached: automatically change user
@@ -244,17 +504,21 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         ),
         title: const Text('Coins Finished 🪙', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
-          'Your coins for filtering by ${widget.matchResult.peerGender} have ended (1 coin = 1 second).\n\nRecharge (min 500 Rs for 60 mins) to continue with gender filtering, or enjoy free unlimited random chat!',
+          'Your coins for filtering by ${_activeGenderFilter.toUpperCase()} have ended (1 coin = 1 second).\n\nRecharge (min 500 Rs for 60 mins) to continue with gender filtering, or enjoy free unlimited random chat!',
           style: const TextStyle(color: AppColors.textSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              // Continue in free unlimited chat
+              // Switch to free unlimited random chat
+              setState(() {
+                _activeGenderFilter = 'unspecified';
+                _isGenderFiltered = false;
+              });
               _startCallTimer();
             },
-            child: const Text('Free Unlimited', style: TextStyle(color: Colors.white70)),
+            child: const Text('Free Unlimited Random', style: TextStyle(color: Colors.white70)),
           ),
           Container(
             decoration: BoxDecoration(
@@ -368,6 +632,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       MaterialPageRoute(
         builder: (_) => RadarScreen(
           profile: widget.myProfile,
+          genderFilter: _activeGenderFilter,
         ),
       ),
     );
@@ -596,46 +861,88 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                   ),
                 ),
               ] else ...[
-                // Google Logged-In User: 100% UNLIMITED Random Video Chat!
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: AppColors.darkCardGradient,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.all_inclusive_rounded, size: 16, color: AppColors.success),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Unlimited • ${_formatDuration(_callElapsedSeconds)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // If gender-filtered, show remaining coins / seconds (1 coin = 1 second)
-                if (_isGenderFiltered) ...[
-                  const SizedBox(width: 8),
+                // Google Logged-In User
+                if (!_isGenderFiltered) ...[
+                  // CASE A: RANDOM GENDER CHAT
+                  // 1. Display coin balance (DO NOT DEDUCT COINS!)
                   InkWell(
                     onTap: () => ShopModal.show(context),
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        gradient: _coinsRemaining < 60 ? null : AppColors.vipGoldGradient,
-                        color: _coinsRemaining < 60 ? AppColors.danger : null,
+                        gradient: AppColors.vipGoldGradient,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.circle, size: 8, color: Colors.black),
+                          const Icon(Icons.monetization_on_rounded, size: 14, color: Colors.black),
                           const SizedBox(width: 4),
                           Text(
-                            '${_coinsRemaining}s (1 coin/s)',
+                            '$_coinsRemaining Coins',
                             style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // 2. Display UNLIMITED TIME
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.darkCardGradient,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.all_inclusive_rounded, size: 16, color: AppColors.success),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Unlimited • ${_formatDuration(_callElapsedSeconds)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  // CASE B: SPECIFIC GENDER CHAT (Women, Men, Trans)
+                  // 1. DO NOT DISPLAY UNLIMITED TIME!
+                  // 2. Display ONLY coins time remaining (1 coin = 1 second)
+                  InkWell(
+                    onTap: () => ShopModal.show(context),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: _coinsRemaining < 60 ? null : AppColors.vipGoldGradient,
+                        color: _coinsRemaining < 60 ? AppColors.danger : null,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_coinsRemaining < 60 ? AppColors.danger : AppColors.coinGold).withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _coinsRemaining < 60 ? Icons.timer_outlined : Icons.timer_rounded,
+                            size: 15,
+                            color: _coinsRemaining < 60 ? Colors.white : Colors.black,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${_formatDuration(_coinsRemaining)} remaining ($_coinsRemaining coins)',
+                            style: TextStyle(
+                              color: _coinsRemaining < 60 ? Colors.white : Colors.black,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),

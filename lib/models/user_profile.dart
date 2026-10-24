@@ -19,7 +19,7 @@ class UserProfile {
     this.avatarUrl,
     this.gender = 'unspecified',
     this.interests = const [],
-    this.coins = 50,
+    this.coins = 120, // 120 coins initial signup bonus (2 minutes of gender-filtered chat)
     this.isVip = false,
     this.status = 'online',
     this.age,
@@ -85,7 +85,7 @@ class UserProfile {
               ?.map((e) => e.toString())
               .toList() ??
           [],
-      coins: map['coins'] as int? ?? 50,
+      coins: map['coins'] as int? ?? 120,
       isVip: map['is_vip'] as bool? ?? false,
       status: map['status'] as String? ?? 'online',
       age: map['age'] as int?,

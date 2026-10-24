@@ -294,7 +294,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // user cannot chat with specific gender unless they purchase a coin package!
       final coins = _profile?.coins ?? 0;
       final isVip = _profile?.isVip ?? false;
-      if (coins < 60 && !isVip) {
+      if (coins <= 0 && !isVip) {
         _promptPackageRequiredForGender(filter);
         return;
       }
@@ -630,7 +630,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 10),
               _buildNavPill(
                 icon: Icons.monetization_on_rounded,
-                label: '${_profile?.coins ?? 50} Coins',
+                label: '${_profile?.coins ?? 120} Coins',
                 accentColor: AppColors.coinGold,
                 onTap: () => ShopModal.show(context),
               ),
