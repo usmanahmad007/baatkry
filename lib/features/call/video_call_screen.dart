@@ -304,23 +304,40 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       // User has NO coins: Ask user to add coins by opening topup!
       _showTopupRequiredDialog(gender);
     } else {
-      // User HAS coins: apply gender filter and match with that specific gender!
+      // User HAS coins: apply gender filter and start time from ZERO!
       setState(() {
         _activeGenderFilter = gender;
         _isGenderFiltered = true;
+        _callElapsedSeconds = 0; // Reset time to 0 every time user switches
       });
+      _startCallTimer();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.coinGold,
           content: Text(
-            'Filtering by ${gender.toUpperCase()} 👑 (1 coin = 1 second remaining: ${_coinsRemaining}s). Finding match...',
+            'Switched to ${gender.toUpperCase()} 👑 filter! Coins timer started from 0 (Remaining: ${_coinsRemaining}s).',
             style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
           ),
           duration: const Duration(seconds: 2),
         ),
       );
-      _onSkipToNext();
     }
+  }
+
+  void _switchToFreeRandom() {
+    setState(() {
+      _activeGenderFilter = 'unspecified';
+      _isGenderFiltered = false;
+      _callElapsedSeconds = 0; // Reset time to 0 every time user switches to free
+    });
+    _startCallTimer();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: AppColors.brandIndigo,
+        content: Text('Switched to Free Unlimited Random Chat! Timer started from 00:00.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   void _showTopupRequiredDialog(String gender) {
@@ -515,6 +532,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               setState(() {
                 _activeGenderFilter = 'unspecified';
                 _isGenderFiltered = false;
+                _callElapsedSeconds = 0; // Reset timer to zero every time user switches to free
               });
               _startCallTimer();
             },
@@ -907,6 +925,29 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: _showGenderSwitchPrompt,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.coinGold.withOpacity(0.5)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.workspace_premium_rounded, size: 14, color: AppColors.coinGold),
+                          SizedBox(width: 4),
+                          Text(
+                            'Filter Gender 👑',
+                            style: TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ] else ...[
                   // CASE B: SPECIFIC GENDER CHAT (Women, Men, Trans)
                   // 1. DO NOT DISPLAY UNLIMITED TIME!
@@ -943,6 +984,29 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                               fontWeight: FontWeight.w900,
                               fontSize: 12,
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: _switchToFreeRandom,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.surfaceBorder),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.autorenew_rounded, size: 14, color: AppColors.brandCyan),
+                          SizedBox(width: 4),
+                          Text(
+                            'Switch to Free',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                           ),
                         ],
                       ),
