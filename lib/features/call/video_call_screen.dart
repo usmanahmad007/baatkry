@@ -20,11 +20,13 @@ import '../shop/shop_modal.dart';
 class VideoCallScreen extends StatefulWidget {
   final MatchResult matchResult;
   final UserProfile myProfile;
+  final String genderFilter;
 
   const VideoCallScreen({
     super.key,
     required this.matchResult,
     required this.myProfile,
+    this.genderFilter = 'everyone',
   });
 
   @override
@@ -62,8 +64,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   @override
   void initState() {
     super.initState();
-    _activeGenderFilter = widget.matchResult.peerGender;
-    _isGenderFiltered = widget.matchResult.peerGender != 'unspecified';
+    final filter = widget.genderFilter.toLowerCase().trim();
+    final requestedVip = filter.isNotEmpty && filter != 'everyone' && filter != 'unspecified';
+    final hasCoins = widget.myProfile.coins > 0 || widget.myProfile.isVip;
+    final isVip = requestedVip && hasCoins;
+
+    _activeGenderFilter = isVip ? filter : 'everyone';
+    _isGenderFiltered = isVip;
     _coinsRemaining = widget.myProfile.coins;
     _guestTotalSecondsUsed = GuestSessionService.instance.cachedSecondsUsed;
 
@@ -336,7 +343,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void _switchToFreeRandom() {
     // Switch to free random, reset time to 0, and RELOAD session
     setState(() {
-      _activeGenderFilter = 'unspecified';
+      _activeGenderFilter = 'everyone';
       _isGenderFiltered = false;
       _callElapsedSeconds = 0; // Reset time to 0 every time user switches to free
     });
@@ -344,22 +351,28 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   }
 
   void _showTopupRequiredDialog(String gender) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
+        backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
           side: const BorderSide(color: AppColors.coinGold, width: 1.5),
         ),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 26),
-            SizedBox(width: 10),
+            const Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 26),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Top-up Required 🪙',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                ),
               ),
             ),
           ],
@@ -370,19 +383,30 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           children: [
             Text(
               'You have 0 coins. To talk with ${gender.toUpperCase()}, you need coins (1 coin = 1 second).',
-              style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+              style: TextStyle(
+                color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                fontSize: 14,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Add coins via our top-up packages (minimum 500 Rs for 60 minutes). Or continue enjoying free unlimited random chat!',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+            Text(
+              'Add coins via our top-up packages (min 500 Rs for 60 mins), or continue enjoying free unlimited random chat!',
+              style: TextStyle(
+                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                fontSize: 12,
+                height: 1.4,
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Free Unlimited', style: TextStyle(color: Colors.white70)),
+            child: Text(
+              'Stay in Free Unlimited',
+              style: TextStyle(color: isDark ? Colors.white70 : AppColors.lightTextSecondary),
+            ),
           ),
           Container(
             decoration: BoxDecoration(
@@ -512,56 +536,129 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   }
 
   void _onGenderCoinsExhausted() {
+    // Safety guard: Never show coin finished popup if user is in free unlimited mode!
+    if (!_isGenderFiltered) return;
     _callTimer?.cancel();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    bool choseTopup = false;
+    int autoSwitchCountdown = 5;
+    Timer? countdownTimer;
+
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: AppColors.coinGold, width: 1.5),
-        ),
-        title: const Text('Coins Finished 🪙', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Text(
-          'Your coins for filtering by ${_activeGenderFilter.toUpperCase()} have ended (1 coin = 1 second).\n\nRecharge (min 500 Rs for 60 mins) to continue with gender filtering, or enjoy free unlimited random chat!',
-          style: const TextStyle(color: AppColors.textSecondary, height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              // Switch to free unlimited random chat and reload session
-              setState(() {
-                _activeGenderFilter = 'unspecified';
-                _isGenderFiltered = false;
-                _callElapsedSeconds = 0; // Reset timer to zero every time user switches to free
-              });
-              _onSkipToNext();
-            },
-            child: const Text('Free Unlimited Random', style: TextStyle(color: Colors.white70)),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: AppColors.vipGoldGradient,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () {
+      barrierDismissible: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          countdownTimer ??= Timer.periodic(const Duration(seconds: 1), (t) {
+            if (!ctx.mounted) {
+              t.cancel();
+              return;
+            }
+            if (autoSwitchCountdown > 1) {
+              setDialogState(() => autoSwitchCountdown--);
+            } else {
+              t.cancel();
+              if (Navigator.of(ctx).canPop()) {
                 Navigator.of(ctx).pop();
-                ShopModal.show(context);
-              },
-              child: const Text('Recharge (500 Rs)', style: TextStyle(fontWeight: FontWeight.bold)),
+              }
+            }
+          });
+
+          return AlertDialog(
+            backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: const BorderSide(color: AppColors.coinGold, width: 1.5),
             ),
-          ),
-        ],
+            title: Row(
+              children: [
+                const Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 24),
+                const SizedBox(width: 8),
+                Text(
+                  'VIP Coins Finished 🪙',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your coins for filtering ${_activeGenderFilter.toUpperCase()} have reached 0.',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Auto-switching to Free Unlimited Random Mode in $autoSwitchCountdown seconds...\nYou can also add top-up anytime.',
+                  style: TextStyle(
+                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              Container(
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                  onPressed: () {
+                    countdownTimer?.cancel();
+                    Navigator.of(ctx).pop();
+                    _switchToFreeRandom();
+                  },
+                  child: Text(
+                    'Return to Free ($autoSwitchCountdown s)',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+              ),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.coinGold),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+                onPressed: () {
+                  countdownTimer?.cancel();
+                  choseTopup = true;
+                  Navigator.of(ctx).pop();
+                  ShopModal.show(context).then((_) {
+                    if (mounted && _coinsRemaining <= 0) {
+                      _switchToFreeRandom();
+                    }
+                  });
+                },
+                child: const Text('Add Top-up', style: TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
-    );
+    ).then((_) {
+      countdownTimer?.cancel();
+      // Auto-switch to free random if user dismissed dialog or countdown completed without topping up
+      if (!choseTopup && mounted && (_isGenderFiltered || _coinsRemaining <= 0)) {
+        _switchToFreeRandom();
+      }
+    });
   }
 
   String _formatDuration(int totalSeconds) {
@@ -790,11 +887,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   // Top Navigation Bar (Modern pills and controls)
   // ---------------------------------------------------------------------------
   Widget _buildTopNavBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width - 32),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
           // Left Pills: Safety Lab, Theater Mode, Free Coins
           Row(
             children: [
@@ -884,8 +984,34 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               ] else ...[
                 // Google Logged-In User
                 if (!_isGenderFiltered) ...[
-                  // CASE A: RANDOM GENDER CHAT
-                  // 1. Display coin balance (DO NOT DEDUCT COINS!)
+                  // CASE A: RANDOM GENDER CHAT (100% FREE & UNLIMITED)
+                  // 1. Explicit Mode Badge: FREE MODE
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.success.withOpacity(0.6)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded, size: 14, color: AppColors.success),
+                        SizedBox(width: 4),
+                        Text(
+                          'FREE MODE (Unlimited)',
+                          style: TextStyle(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // 2. Display coin balance (DO NOT DEDUCT COINS!)
                   InkWell(
                     onTap: () => ShopModal.show(context),
                     borderRadius: BorderRadius.circular(20),
@@ -909,9 +1035,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                   ),
                   const SizedBox(width: 8),
 
-                  // 2. Display UNLIMITED TIME
+                  // 3. Display Call Duration
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
                     decoration: BoxDecoration(
                       gradient: AppColors.darkCardGradient,
                       borderRadius: BorderRadius.circular(20),
@@ -919,16 +1045,18 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.all_inclusive_rounded, size: 16, color: AppColors.success),
-                        const SizedBox(width: 6),
+                        const Icon(Icons.all_inclusive_rounded, size: 15, color: Colors.white),
+                        const SizedBox(width: 5),
                         Text(
-                          'Unlimited • ${_formatDuration(_callElapsedSeconds)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
+                          _formatDuration(_callElapsedSeconds),
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 11),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 8),
+
+                  // 4. Filter Gender 👑 Action Pill
                   InkWell(
                     onTap: _showGenderSwitchPrompt,
                     borderRadius: BorderRadius.circular(20),
@@ -952,40 +1080,66 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                     ),
                   ),
                 ] else ...[
-                  // CASE B: SPECIFIC GENDER CHAT (Women, Men, Trans)
-                  // 1. DO NOT DISPLAY UNLIMITED TIME!
+                  // CASE B: SPECIFIC GENDER CHAT (VIP MODE: Women, Men, Trans)
+                  // 1. Explicit Mode Badge: VIP MODE
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.vipGoldGradient,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.coinGold.withOpacity(0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.workspace_premium_rounded, size: 14, color: Colors.black),
+                        const SizedBox(width: 4),
+                        Text(
+                          'VIP MODE (${_activeGenderFilter.toUpperCase()})',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
                   // 2. Display ONLY coins time remaining (1 coin = 1 second)
                   InkWell(
                     onTap: () => ShopModal.show(context),
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
                       decoration: BoxDecoration(
-                        gradient: _coinsRemaining < 60 ? null : AppColors.vipGoldGradient,
-                        color: _coinsRemaining < 60 ? AppColors.danger : null,
+                        color: _coinsRemaining < 60 ? AppColors.danger : AppColors.surfaceElevated,
                         borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (_coinsRemaining < 60 ? AppColors.danger : AppColors.coinGold).withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                        border: Border.all(
+                          color: _coinsRemaining < 60 ? AppColors.danger : AppColors.coinGold.withOpacity(0.5),
+                        ),
                       ),
                       child: Row(
                         children: [
                           Icon(
                             _coinsRemaining < 60 ? Icons.timer_outlined : Icons.timer_rounded,
-                            size: 15,
-                            color: _coinsRemaining < 60 ? Colors.white : Colors.black,
+                            size: 14,
+                            color: _coinsRemaining < 60 ? Colors.white : AppColors.coinGold,
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Text(
-                            '${_formatDuration(_coinsRemaining)} remaining ($_coinsRemaining coins)',
+                            '${_formatDuration(_coinsRemaining)} left ($_coinsRemaining coins)',
                             style: TextStyle(
-                              color: _coinsRemaining < 60 ? Colors.white : Colors.black,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
+                              color: _coinsRemaining < 60 ? Colors.white : AppColors.coinGold,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
                             ),
                           ),
                         ],
@@ -993,6 +1147,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
+
+                  // 3. Return to Free Action Pill
                   InkWell(
                     onTap: _switchToFreeRandom,
                     borderRadius: BorderRadius.circular(20),
@@ -1001,14 +1157,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                       decoration: BoxDecoration(
                         color: AppColors.surfaceElevated,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.surfaceBorder),
+                        border: Border.all(color: AppColors.brandCyan.withOpacity(0.6)),
                       ),
                       child: const Row(
                         children: [
                           Icon(Icons.autorenew_rounded, size: 14, color: AppColors.brandCyan),
                           SizedBox(width: 4),
                           Text(
-                            'Switch to Free',
+                            'Return to Free',
                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                           ),
                         ],
@@ -1032,6 +1188,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

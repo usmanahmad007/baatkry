@@ -222,11 +222,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _proceedToMatchingScreen() {
+    final coins = _profile?.coins ?? 0;
+    final isVip = _profile?.isVip ?? false;
+    final effectiveFilter = (coins <= 0 && !isVip) ? 'everyone' : _selectedGenderFilter;
+    if (effectiveFilter != _selectedGenderFilter && mounted) {
+      setState(() => _selectedGenderFilter = 'everyone');
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RadarScreen(
           profile: _profile ?? const UserProfile(id: 'temp_guest'),
-          genderFilter: _selectedGenderFilter,
+          genderFilter: effectiveFilter,
         ),
       ),
     );

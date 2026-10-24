@@ -44,6 +44,7 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
             builder: (_) => VideoCallScreen(
               matchResult: result,
               myProfile: widget.profile,
+              genderFilter: widget.genderFilter,
             ),
           ),
         );
