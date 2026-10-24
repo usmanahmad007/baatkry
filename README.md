@@ -16,8 +16,8 @@ Baatkry is a cross-platform live video chatting platform (Web, Android, iOS) ins
   - **Free Unlimited Chat:** Instant 1-tap random video matching worldwide. No email/password or phone registration needed.
   - **VIP Gender Filters:** Choose specifically to talk to **Women 👑**, **Men 👑**, or **Transgender 👑**.
 - **Transparent Coin Economy:**
-  - **Rate:** 20 Rupees = 1 Minute (1 Coin = 1 Second of Gender-Filtered Video Chat).
-  - **Minimum Deposit:** 500 Rs (25 Minutes = 1,500 Coins).
+  - **Plan:** 500 Rupees = 60 Minutes (1 Coin = 1 Second of Gender-Filtered Video Chat).
+  - **Minimum Deposit:** 500 Rs (60 Minutes = 3,600 Coins).
   - **Free Tier:** Unlimited random matching is 100% free forever.
 - **One-Time Permission System:**
   - Camera & microphone permissions are requested once and cached with `SharedPreferences`.
@@ -41,10 +41,10 @@ Baatkry is a cross-platform live video chatting platform (Web, Android, iOS) ins
 
 | Package | Price (PKR) | Minutes | Coins (1 coin = 1 sec) | Bonus Perks |
 | :--- | :--- | :--- | :--- | :--- |
-| **Starter Pack** | Rs. 500 | 25 Mins | 1,500 Coins | Minimum Deposit Tier |
-| **Popular VIP** | Rs. 1,000 | 55 Mins | 3,300 Coins | +5 Bonus Minutes |
-| **Pro VIP Pass** | Rs. 2,500 | 150 Mins | 9,000 Coins | +25 Bonus Mins + Gold VIP Badge |
-| **King VIP Access**| Rs. 5,000 | 350 Mins | 21,000 Coins | +100 Bonus Mins + Instant Priority |
+| **Starter Pack** | Rs. 500 | 60 Mins | 3,600 Coins | Minimum Deposit Tier (1 Hour) |
+| **Popular VIP** | Rs. 1,000 | 130 Mins | 7,800 Coins | +10 Bonus Minutes |
+| **Pro VIP Pass** | Rs. 2,500 | 350 Mins | 21,000 Coins | +50 Bonus Mins + Gold VIP Badge |
+| **King VIP Access**| Rs. 5,000 | 800 Mins | 48,000 Coins | +200 Bonus Mins + Crown Priority |
 
 ---
 

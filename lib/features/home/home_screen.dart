@@ -237,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 border: Border.all(color: AppColors.surfaceBorder),
               ),
               child: const Text(
-                'Rate: 20 Rupees = 1 Minute (1 Coin = 1 Second of gender-filtered chat). Min deposit: 500 Rs (25 Mins).',
+                'Plan: 500 Rupees = 60 Minutes (1 Coin = 1 Second of gender-filtered chat). Min deposit: 500 Rs (60 Mins).',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
             ),

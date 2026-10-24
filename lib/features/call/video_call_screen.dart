@@ -94,7 +94,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         ),
         title: const Text('Coins Finished 🪙', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
-          'Your coins for filtering by ${widget.matchResult.peerGender} have ended (1 coin = 1 second).\n\nRecharge (min 500 Rs for 25 mins) to continue with gender filtering (20 Rs = 1 min), or enjoy free unlimited random chat!',
+          'Your coins for filtering by ${widget.matchResult.peerGender} have ended (1 coin = 1 second).\n\nRecharge (min 500 Rs for 60 mins) to continue with gender filtering, or enjoy free unlimited random chat!',
           style: const TextStyle(color: AppColors.textSecondary, height: 1.4),
         ),
         actions: [

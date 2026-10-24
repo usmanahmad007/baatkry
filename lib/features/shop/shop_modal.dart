@@ -270,12 +270,12 @@ class _ShopModalState extends State<ShopModal> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Pricing: 20 Rupees = 1 Minute',
+                        'VIP Plan: 500 Rupees = 60 Minutes',
                         style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                       ),
                       SizedBox(height: 2),
                       Text(
-                        '1 Coin = 1 Second of Gender-Filtered Chat. Minimum deposit: 500 Rs (25 Minutes).',
+                        '1 Coin = 1 Second of Gender-Filtered Chat. Minimum deposit: 500 Rs (60 Minutes).',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
                       ),
                     ],

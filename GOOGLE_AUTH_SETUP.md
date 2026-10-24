@@ -61,6 +61,6 @@ This step-by-step guide walks you through enabling **Google OAuth Sign-In** for 
 - **Anonymous Guests** can browse and enter free unlimited random video calls without signing in.
 - When an anonymous user attempts to:
   1. Filter by specific gender (**Women 👑**, **Men 👑**, **Trans 👑**), or
-  2. Purchase coin packages in the Shop (min 500 Rs for 25 mins),
+  2. Purchase coin packages in the Shop (min 500 Rs for 60 mins),
 - Baatkry prompts the user to **Sign In with Google**.
 - Once signed in, their coin balance, VIP status, and identity are permanently linked to their Google account and stored securely in Supabase.
