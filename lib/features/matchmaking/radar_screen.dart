@@ -9,11 +9,13 @@ import '../call/video_call_screen.dart';
 class RadarScreen extends StatefulWidget {
   final UserProfile profile;
   final String genderFilter;
+  final String countryFilter;
 
   const RadarScreen({
     super.key,
     required this.profile,
     this.genderFilter = 'everyone',
+    this.countryFilter = 'Global (Worldwide)',
   });
 
   @override
@@ -46,6 +48,7 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
               matchResult: result,
               myProfile: SupabaseService.instance.currentProfile ?? widget.profile,
               genderFilter: widget.genderFilter,
+              countryFilter: widget.countryFilter,
             ),
           ),
         );
@@ -55,6 +58,7 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
     MatchmakingService.instance.findMatch(
       myProfile: widget.profile,
       genderFilter: widget.genderFilter,
+      countryFilter: widget.countryFilter,
     );
   }
 
@@ -198,9 +202,13 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
               ),
               const SizedBox(height: 8),
               Text(
-                widget.genderFilter == 'everyone'
-                    ? 'Connecting with random strangers worldwide...'
-                    : 'Searching for ${widget.genderFilter} online now...',
+                widget.countryFilter == 'Global (Worldwide)' || widget.countryFilter == 'ALL'
+                    ? (widget.genderFilter == 'everyone'
+                        ? 'Connecting with random strangers worldwide 🌍...'
+                        : 'Searching for ${widget.genderFilter} worldwide 🌍...')
+                    : (widget.genderFilter == 'everyone'
+                        ? 'Connecting with strangers in ${widget.countryFilter}...'
+                        : 'Searching for ${widget.genderFilter} in ${widget.countryFilter}...'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,

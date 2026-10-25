@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 
@@ -20,12 +21,14 @@ class VideoCallScreen extends StatefulWidget {
   final MatchResult matchResult;
   final UserProfile myProfile;
   final String genderFilter;
+  final String countryFilter;
 
   const VideoCallScreen({
     super.key,
     required this.matchResult,
     required this.myProfile,
     this.genderFilter = 'everyone',
+    this.countryFilter = 'Global (Worldwide)',
   });
 
   @override
@@ -856,6 +859,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     MatchmakingService.instance.findMatch(
       myProfile: updatedProf,
       genderFilter: _activeGenderFilter,
+      countryFilter: widget.countryFilter,
     );
   }
 
@@ -898,90 +902,149 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.meshBackgroundGradient,
-        ),
-        child: Column(
-          children: [
-            // Top Navigation Bar
-            if (!_isTheaterMode) SafeArea(bottom: false, child: _buildTopNavBar()),
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+            if (_isTheaterMode) {
+              setState(() => _isTheaterMode = false);
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: AppColors.meshBackgroundGradient,
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Column(
+                children: [
+                  // Top Navigation Bar
+                  if (!_isTheaterMode) SafeArea(bottom: false, child: _buildTopNavBar()),
 
-            // Main Body: Responsive Desktop Side-by-Side vs Mobile Vertical Split
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final isDesktop = constraints.maxWidth >= 900;
+                  // Main Body: Responsive Desktop Side-by-Side vs Mobile Vertical Split
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isDesktop = constraints.maxWidth >= 900;
 
-                  if (isDesktop) {
-                    // DESKTOP LAYOUT: My Camera (Left) + Stranger's Camera (Center) + Chat (Right)
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // 1. Local Camera Card (Left)
-                          Expanded(
-                            flex: 5,
-                            child: _buildMyCameraCard(isMobile: false),
-                          ),
-                          const SizedBox(width: 14),
+                        if (isDesktop) {
+                          // DESKTOP LAYOUT: My Camera (Left) + Stranger's Camera (Center) + Chat (Right)
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // 1. Local Camera Card (Left)
+                                Expanded(
+                                  flex: 5,
+                                  child: _buildMyCameraCard(isMobile: false),
+                                ),
+                                const SizedBox(width: 14),
 
-                          // 2. Stranger's Camera Card (Center/Right)
-                          Expanded(
-                            flex: 5,
-                            child: _buildStrangerCameraCard(isMobile: false),
-                          ),
-                          const SizedBox(width: 14),
+                                // 2. Stranger's Camera Card (Center/Right)
+                                Expanded(
+                                  flex: 5,
+                                  child: _buildStrangerCameraCard(isMobile: false),
+                                ),
+                                const SizedBox(width: 14),
 
-                          // 3. Chat Sidebar (Right side panel)
-                          if (!_isTheaterMode)
-                            SizedBox(
-                              width: 320,
-                              child: _buildChatSidebar(isMobile: false),
+                                // 3. Chat Sidebar (Right side panel)
+                                if (!_isTheaterMode)
+                                  SizedBox(
+                                    width: 320,
+                                    child: _buildChatSidebar(isMobile: false),
+                                  ),
+                              ],
                             ),
-                        ],
-                      ),
-                    );
-                  } else {
-                    // MOBILE LAYOUT: Half screen for one user and half screen for second user (50/50 vertical split)
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
-                      child: Stack(
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Top 50%: Remote Stranger
-                              Expanded(
-                                child: _buildStrangerCameraCard(isMobile: true),
-                              ),
-                              const SizedBox(height: 8),
+                          );
+                        } else {
+                          // MOBILE LAYOUT: Half screen for one user and half screen for second user (50/50 vertical split)
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+                            child: Stack(
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    // Top 50%: Remote Stranger
+                                    Expanded(
+                                      child: _buildStrangerCameraCard(isMobile: true),
+                                    ),
+                                    const SizedBox(height: 8),
 
-                              // Bottom 50%: My Local Camera
-                              Expanded(
-                                child: _buildMyCameraCard(isMobile: true),
-                              ),
-                            ],
-                          ),
+                                    // Bottom 50%: My Local Camera
+                                    Expanded(
+                                      child: _buildMyCameraCard(isMobile: true),
+                                    ),
+                                  ],
+                                ),
 
-                          // Floating Mobile Chat Overlay
-                          if (_showMobileChat)
-                            Positioned(
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              height: constraints.maxHeight * 0.45,
-                              child: _buildChatSidebar(isMobile: true),
+                                // Floating Mobile Chat Overlay
+                                if (_showMobileChat)
+                                  Positioned(
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    height: constraints.maxHeight * 0.45,
+                                    child: _buildChatSidebar(isMobile: true),
+                                  ),
+                              ],
                             ),
-                        ],
-                      ),
-                    );
-                  }
-                },
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+
+              // Persistent Floating Controls in Full Screen mode so user can always exit full screen
+              if (_isTheaterMode)
+                Positioned(
+                  top: 14,
+                  right: 18,
+                  child: SafeArea(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.85),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: Colors.white24, width: 1.2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.5),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildNavPill(
+                            icon: Icons.fullscreen_exit_rounded,
+                            label: 'Exit Full Screen',
+                            accentColor: AppColors.brandCyan,
+                            onTap: () => setState(() => _isTheaterMode = false),
+                          ),
+                          const SizedBox(width: 8),
+                          _buildNavPill(
+                            icon: Icons.logout_rounded,
+                            label: 'Exit Call',
+                            accentColor: AppColors.danger,
+                            onTap: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1016,8 +1079,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               ),
               const SizedBox(width: 10),
               _buildNavPill(
-                icon: Icons.fullscreen_rounded,
-                label: _isTheaterMode ? 'Exit Theater' : 'Theater',
+                icon: _isTheaterMode ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                label: _isTheaterMode ? 'Exit Full Screen' : 'Full Screen',
+                accentColor: _isTheaterMode ? AppColors.brandCyan : null,
                 onTap: () => setState(() => _isTheaterMode = !_isTheaterMode),
               ),
               const SizedBox(width: 10),
@@ -1575,9 +1639,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                           shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
                         ),
                       ),
-                      const Text(
-                        'Global • Online',
-                        style: TextStyle(
+                      Text(
+                        '${_activeMatchResult.peerCountryFlag} ${_activeMatchResult.peerCountry} • Online',
+                        style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 10,
                           shadows: [Shadow(color: Colors.black87, blurRadius: 4)],

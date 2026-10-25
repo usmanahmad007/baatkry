@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
+import '../models/country.dart';
 import '../models/user_profile.dart';
 import 'supabase_service.dart';
 import 'token_service.dart';
@@ -23,6 +24,8 @@ class MatchResult {
   final String peerId;
   final String peerName;
   final String peerGender;
+  final String peerCountry;
+  final String peerCountryFlag;
   final List<String> commonInterests;
 
   const MatchResult({
@@ -31,6 +34,8 @@ class MatchResult {
     required this.peerId,
     required this.peerName,
     this.peerGender = 'unspecified',
+    this.peerCountry = 'Global (Worldwide)',
+    this.peerCountryFlag = '🌍',
     this.commonInterests = const [],
   });
 }
@@ -55,6 +60,7 @@ class MatchmakingService {
   Future<void> findMatch({
     required UserProfile myProfile,
     String genderFilter = 'everyone',
+    String countryFilter = 'Global (Worldwide)',
   }) async {
     _status = MatchmakingStatus.searching;
     _statusController.add(_status);
@@ -77,6 +83,8 @@ class MatchmakingService {
               final peerId = payload['peer_id'] as String;
               final peerName = payload['peer_name'] as String;
               final peerGender = payload['peer_gender'] as String? ?? 'unspecified';
+              final peerCountry = payload['peer_country'] as String? ?? 'Global (Worldwide)';
+              final peerCountryFlag = payload['peer_country_flag'] as String? ?? '🌍';
               final token = TokenService.createLiveKitToken(
                 roomName: roomId,
                 participantId: myProfile.id,
@@ -89,6 +97,8 @@ class MatchmakingService {
                 peerId: peerId,
                 peerName: peerName,
                 peerGender: peerGender,
+                peerCountry: peerCountry,
+                peerCountryFlag: peerCountryFlag,
               ));
             },
           );
@@ -100,7 +110,9 @@ class MatchmakingService {
               'nickname': myProfile.nickname,
               'gender': myProfile.gender,
               'interests': myProfile.interests,
+              'country': myProfile.country,
               'gender_filter': genderFilter,
+              'country_filter': countryFilter,
               'joined_at': DateTime.now().toIso8601String(),
             });
           }
@@ -110,7 +122,7 @@ class MatchmakingService {
         _searchTimeoutTimer?.cancel();
         _searchTimeoutTimer = Timer(const Duration(seconds: 4), () {
           if (_status == MatchmakingStatus.searching) {
-            _createSimulatedMatch(myProfile, genderFilter);
+            _createSimulatedMatch(myProfile, genderFilter, countryFilter);
           }
         });
         return;
@@ -123,7 +135,7 @@ class MatchmakingService {
     _searchTimeoutTimer?.cancel();
     _searchTimeoutTimer = Timer(const Duration(milliseconds: 2200), () {
       if (_status == MatchmakingStatus.searching) {
-        _createSimulatedMatch(myProfile, genderFilter);
+        _createSimulatedMatch(myProfile, genderFilter, countryFilter);
       }
     });
   }
@@ -206,9 +218,9 @@ class MatchmakingService {
     }
   }
 
-  void _createSimulatedMatch(UserProfile myProfile, String genderFilter) {
-    final namesMen = ['Rajat kumar', 'Alex', 'Jordan', 'Sam', 'Lucas', 'Ali', 'Hamza', 'Daniel'];
-    final namesWomen = ['Sophia', 'Elena', 'Priya', 'Chloe', 'Zoe', 'Ayesha', 'Sara', 'Fatima', 'Jessica', 'Maria'];
+  void _createSimulatedMatch(UserProfile myProfile, String genderFilter, [String countryFilter = 'Global (Worldwide)']) {
+    final namesMen = ['Rajat kumar', 'Alex', 'Jordan', 'Sam', 'Lucas', 'Ali', 'Hamza', 'Daniel', 'Marcus', 'Leo'];
+    final namesWomen = ['Sophia', 'Elena', 'Priya', 'Chloe', 'Zoe', 'Ayesha', 'Sara', 'Fatima', 'Jessica', 'Maria', 'Emily', 'Camila'];
     final namesTrans = ['Taylor', 'River', 'Morgan', 'Casey', 'Rowan'];
 
     List<String> pool;
@@ -259,6 +271,15 @@ class MatchmakingService {
       }
     }
 
+    AppCountry matchedCountry;
+    if (countryFilter.isNotEmpty && !countryFilter.toLowerCase().contains('global') && countryFilter != 'ALL') {
+      matchedCountry = AppCountry.fromName(countryFilter);
+    } else {
+      // Pick random from top popular countries (excluding the global ALL option)
+      final specificCountries = kPopularCountries.where((c) => c.code != 'ALL').toList();
+      matchedCountry = specificCountries[Random().nextInt(specificCountries.length)];
+    }
+
     final randomName = pool[Random().nextInt(pool.length)];
     final simulatedPeerId = const Uuid().v4();
     final roomId = 'demo_room_${DateTime.now().millisecondsSinceEpoch}';
@@ -275,6 +296,8 @@ class MatchmakingService {
       peerId: simulatedPeerId,
       peerName: randomName,
       peerGender: targetGender,
+      peerCountry: matchedCountry.name,
+      peerCountryFlag: matchedCountry.flag,
       commonInterests: myProfile.interests.isNotEmpty ? [myProfile.interests.first] : ['Music'],
     ));
   }

@@ -11,6 +11,8 @@ class UserProfile {
   final int? age;
   final bool isAgeVerified;
   final String? birthDate;
+  final String country;
+  final String countryCode;
 
   const UserProfile({
     required this.id,
@@ -25,6 +27,8 @@ class UserProfile {
     this.age,
     this.isAgeVerified = false,
     this.birthDate,
+    this.country = 'Global (Worldwide)',
+    this.countryCode = 'ALL',
   });
 
   UserProfile copyWith({
@@ -40,6 +44,8 @@ class UserProfile {
     int? age,
     bool? isAgeVerified,
     String? birthDate,
+    String? country,
+    String? countryCode,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -54,6 +60,8 @@ class UserProfile {
       age: age ?? this.age,
       isAgeVerified: isAgeVerified ?? this.isAgeVerified,
       birthDate: birthDate ?? this.birthDate,
+      country: country ?? this.country,
+      countryCode: countryCode ?? this.countryCode,
     );
   }
 
@@ -71,6 +79,8 @@ class UserProfile {
       'age': age,
       'is_age_verified': isAgeVerified,
       'birth_date': birthDate,
+      'country': country,
+      'country_code': countryCode,
     };
   }
 
@@ -91,6 +101,8 @@ class UserProfile {
       age: map['age'] as int?,
       isAgeVerified: map['is_age_verified'] as bool? ?? false,
       birthDate: map['birth_date'] as String?,
+      country: map['country'] as String? ?? 'Global (Worldwide)',
+      countryCode: map['country_code'] as String? ?? 'ALL',
     );
   }
 }

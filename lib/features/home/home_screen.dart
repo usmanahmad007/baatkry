@@ -5,6 +5,7 @@ import 'package:livekit_client/livekit_client.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/country.dart';
 import '../../models/user_profile.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
@@ -27,6 +28,10 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedGenderFilter = 'everyone';
   // User's own gender: 'men', 'women', 'transgender', 'unspecified'
   String _myGender = 'unspecified';
+  // Country filter
+  String _selectedCountry = 'Global (Worldwide)';
+  String _selectedCountryCode = 'ALL';
+  String _selectedCountryFlag = '🌍';
 
   LocalVideoTrack? _previewTrack;
   StreamSubscription<UserProfile?>? _profileSub;
@@ -37,12 +42,18 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _profile = SupabaseService.instance.currentProfile;
     _myGender = _profile?.gender ?? 'unspecified';
+    _selectedCountry = _profile?.country ?? 'Global (Worldwide)';
+    _selectedCountryCode = _profile?.countryCode ?? 'ALL';
+    _selectedCountryFlag = AppCountry.fromCode(_selectedCountryCode).flag;
 
     _profileSub = SupabaseService.instance.profileStream.listen((p) {
       if (mounted) {
         setState(() {
           _profile = p;
           _myGender = p?.gender ?? 'unspecified';
+          _selectedCountry = p?.country ?? 'Global (Worldwide)';
+          _selectedCountryCode = p?.countryCode ?? 'ALL';
+          _selectedCountryFlag = AppCountry.fromCode(_selectedCountryCode).flag;
         });
       }
     });
@@ -96,6 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => RadarScreen(
           profile: _profile ?? const UserProfile(id: 'temp_guest'),
           genderFilter: effectiveFilter,
+          countryFilter: _selectedCountry,
         ),
       ),
     );
@@ -335,6 +347,316 @@ class _HomeScreenState extends State<HomeScreen> {
     await SupabaseService.instance.updateProfile(gender: gender);
   }
 
+  void _confirmLogout() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surf(context),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: AppColors.border(context)),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.logout_rounded, color: AppColors.danger, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Sign Out',
+              style: TextStyle(color: AppColors.txtPrimary(context), fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to log out of your account? You will return to anonymous guest mode.',
+          style: TextStyle(color: AppColors.txtSecondary(context), fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: AppColors.txtSecondary(context))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await SupabaseService.instance.signOut();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    backgroundColor: AppColors.brandIndigo,
+                    content: Text('Logged out successfully. Reverted to Guest Mode.'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Log Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAccountDetailsModal() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final email = SupabaseService.instance.googleUserEmail ?? 'Google Verified User';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.border(context), width: 1.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white24 : Colors.black12,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: AppColors.brandIndigo,
+                  child: Text(
+                    _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _profile?.nickname ?? 'User',
+                        style: TextStyle(
+                          color: AppColors.txtPrimary(context),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        email,
+                        style: TextStyle(color: AppColors.txtSecondary(context), fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    '18+ Verified ✓',
+                    style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border(context)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 22),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Coin Balance',
+                        style: TextStyle(color: AppColors.txtPrimary(context), fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '${_profile?.coins ?? 0} Coins',
+                    style: const TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _confirmLogout();
+              },
+              icon: const Icon(Icons.logout_rounded, size: 18, color: Colors.white),
+              label: const Text('Log Out of App', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.danger,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCountryPickerModal() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    String searchQuery = '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final filteredCountries = kPopularCountries.where((c) {
+              if (searchQuery.isEmpty) return true;
+              return c.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+                  c.code.toLowerCase().contains(searchQuery.toLowerCase());
+            }).toList();
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.72,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border(top: BorderSide(color: AppColors.border(context), width: 1.5)),
+              ),
+              child: Column(
+                children: [
+                  // Drag Handle
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Select Country / Region',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.txtPrimary(context),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(modalCtx).pop(),
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        color: AppColors.txtSecondary(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Search Field
+                  TextField(
+                    onChanged: (val) => setModalState(() => searchQuery = val),
+                    decoration: InputDecoration(
+                      hintText: 'Search country...',
+                      hintStyle: TextStyle(color: AppColors.txtMuted(context), fontSize: 13),
+                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                      filled: true,
+                      fillColor: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: AppColors.border(context)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: AppColors.border(context)),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: filteredCountries.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        color: AppColors.border(context).withOpacity(0.5),
+                      ),
+                      itemBuilder: (_, index) {
+                        final country = filteredCountries[index];
+                        final isSelected = _selectedCountryCode == country.code;
+
+                        return ListTile(
+                          onTap: () {
+                            setState(() {
+                              _selectedCountry = country.name;
+                              _selectedCountryCode = country.code;
+                              _selectedCountryFlag = country.flag;
+                            });
+                            SupabaseService.instance.updateProfile(
+                              country: country.name,
+                              countryCode: country.code,
+                            );
+                            Navigator.of(modalCtx).pop();
+                          },
+                          leading: Text(country.flag, style: const TextStyle(fontSize: 24)),
+                          title: Text(
+                            country.name,
+                            style: TextStyle(
+                              color: isSelected ? AppColors.brandIndigo : AppColors.txtPrimary(context),
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle_rounded, color: AppColors.brandIndigo, size: 20)
+                              : null,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isGuest = _profile?.isAnonymous ?? true;
@@ -373,6 +695,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           // Gender Filter Selector (Everyone free vs Paid VIP categories)
                           _buildGenderFilterSection(),
+
+                          const SizedBox(height: 16),
+
+                          // Country Filter Selector (Worldwide vs Specific Countries)
+                          _buildCountryFilterSection(),
 
                           const SizedBox(height: 16),
 
@@ -557,7 +884,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // Right: Google Sign-In or User Profile Pill
+          // Right: Google Sign-In or User Profile Pill with Logout Option
           if (isGuest)
             InkWell(
               onTap: () => AuthModal.show(context),
@@ -589,34 +916,50 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
           else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                gradient: AppColors.cardGrad(context),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.border(context)),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: AppColors.brandIndigo,
-                    child: Text(
-                      _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: _showAccountDetailsModal,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.cardGrad(context),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.border(context)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 12,
+                          backgroundColor: AppColors.brandIndigo,
+                          child: Text(
+                            _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _profile?.nickname ?? 'User',
+                          style: TextStyle(
+                            color: AppColors.txtPrimary(context),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _profile?.nickname ?? 'User',
-                    style: TextStyle(
-                      color: AppColors.txtPrimary(context),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                _buildNavPill(
+                  icon: Icons.logout_rounded,
+                  label: 'Logout',
+                  accentColor: AppColors.danger,
+                  onTap: _confirmLogout,
+                ),
+              ],
             ),
         ],
       ),
@@ -923,6 +1266,109 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Country / Region Filter Selector (Worldwide vs Specific Countries)
+  // ---------------------------------------------------------------------------
+  Widget _buildCountryFilterSection() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: AppColors.cardGrad(context),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border(context)),
+        boxShadow: AppColors.isDark(context)
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Match Region / Country:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.txtPrimary(context)),
+              ),
+              Text(
+                _selectedCountryCode == 'ALL' ? 'Worldwide 🌍' : 'Filtered 🎯',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _selectedCountryCode == 'ALL' ? AppColors.success : AppColors.brandIndigo,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: _showCountryPickerModal,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surfElevated(context),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border(context)),
+              ),
+              child: Row(
+                children: [
+                  Text(_selectedCountryFlag, style: const TextStyle(fontSize: 22)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedCountry,
+                          style: TextStyle(
+                            color: AppColors.txtPrimary(context),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          _selectedCountryCode == 'ALL'
+                              ? 'Connect with anyone from any country'
+                              : 'Prefer matches from this country',
+                          style: TextStyle(
+                            color: AppColors.txtSecondary(context),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppColors.brandIndigo.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Change', style: TextStyle(color: AppColors.brandIndigo, fontWeight: FontWeight.bold, fontSize: 11)),
+                        SizedBox(width: 4),
+                        Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: AppColors.brandIndigo),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:monkey_omegle_app/features/moderation/age_consent_modal.dart';
+import 'package:monkey_omegle_app/models/country.dart';
+import 'package:monkey_omegle_app/models/user_profile.dart';
 import 'package:monkey_omegle_app/services/livekit_service.dart';
 import 'package:monkey_omegle_app/services/permission_service.dart';
 import 'package:monkey_omegle_app/services/supabase_service.dart';
@@ -96,6 +98,43 @@ void main() {
       await prefs.setBool(AgeConsentModal.keyUnderageBlocked, true);
       expect(await AgeConsentModal.isAgeVerified(), isFalse);
       expect(await AgeConsentModal.isBlockedUnderage(), isTrue);
+    });
+
+    test('Country model and matchmaking country filter support', () async {
+      expect(kPopularCountries.isNotEmpty, isTrue);
+      final us = AppCountry.fromCode('US');
+      expect(us.name, 'United States');
+      expect(us.flag, '🇺🇸');
+
+      final pk = AppCountry.fromName('Pakistan');
+      expect(pk.code, 'PK');
+      expect(pk.flag, '🇵🇰');
+
+      // User profile country defaults and serialization
+      const profile = UserProfile(
+        id: 'u123',
+        nickname: 'Explorer',
+        country: 'United States',
+        countryCode: 'US',
+      );
+      final map = profile.toMap();
+      expect(map['country'], 'United States');
+      expect(map['country_code'], 'US');
+
+      final deserialized = UserProfile.fromMap(map);
+      expect(deserialized.country, 'United States');
+      expect(deserialized.countryCode, 'US');
+    });
+
+    test('SupabaseService signOut clears session and resets to guest', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('local_user_id', 'custom_id');
+      await prefs.setBool('baatkry_age_verified_18_plus', true);
+
+      await SupabaseService.instance.signOut();
+
+      expect(prefs.getBool('baatkry_age_verified_18_plus'), isNull);
+      expect(SupabaseService.instance.isGuest, isTrue);
     });
   });
 }

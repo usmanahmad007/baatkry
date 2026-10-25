@@ -109,6 +109,8 @@ class SupabaseService {
     final savedIsVip = prefs.getBool('local_user_is_vip') ?? false;
     final savedGender = prefs.getString('local_user_gender') ?? 'unspecified';
     final savedInterests = prefs.getStringList('local_user_interests') ?? ['Music', 'Gaming'];
+    final savedCountry = prefs.getString('local_user_country') ?? 'Global (Worldwide)';
+    final savedCountryCode = prefs.getString('local_user_country_code') ?? 'ALL';
 
     await prefs.setString('local_user_id', savedId);
 
@@ -120,6 +122,8 @@ class SupabaseService {
       isVip: savedIsVip,
       gender: savedGender,
       interests: savedInterests,
+      country: savedCountry,
+      countryCode: savedCountryCode,
     );
 
     _profileController.add(_currentProfile);
@@ -540,10 +544,12 @@ class SupabaseService {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('local_user_id');
+    await prefs.remove('baatkry_age_verified_18_plus');
+    await prefs.remove('baatkry_user_age');
     await _loadOrCreateProfile();
   }
 
-  /// Update user profile details (interests, nickname, gender, age verification)
+  /// Update user profile details (interests, nickname, gender, country, age verification)
   Future<void> updateProfile({
     String? nickname,
     String? gender,
@@ -552,6 +558,8 @@ class SupabaseService {
     int? age,
     bool? isAgeVerified,
     String? birthDate,
+    String? country,
+    String? countryCode,
   }) async {
     if (_currentProfile == null) return;
 
@@ -563,6 +571,8 @@ class SupabaseService {
       age: age,
       isAgeVerified: isAgeVerified,
       birthDate: birthDate,
+      country: country,
+      countryCode: countryCode,
     );
 
     if (_client != null && AppConfig.isSupabaseConfigured) {
@@ -579,6 +589,8 @@ class SupabaseService {
     if (interests != null) await prefs.setStringList('local_user_interests', interests);
     if (age != null) await prefs.setInt('local_user_age', age);
     if (isAgeVerified != null) await prefs.setBool('baatkry_age_verified_18_plus', isAgeVerified);
+    if (country != null) await prefs.setString('local_user_country', country);
+    if (countryCode != null) await prefs.setString('local_user_country_code', countryCode);
 
     _profileController.add(_currentProfile);
   }
