@@ -22,11 +22,16 @@ class SupabaseService {
   SupabaseClient? _client;
   UserProfile? _currentProfile;
   final _profileController = StreamController<UserProfile?>.broadcast();
+  String? _browserDeviceId;
+  bool _hasUsedJoiningBonus = false;
 
   Stream<UserProfile?> get profileStream => _profileController.stream;
   UserProfile? get currentProfile => _currentProfile;
   bool get isAuthenticated => _currentProfile != null && !_currentProfile!.isAnonymous;
-  bool get isGuest => _currentProfile != null && _currentProfile!.isAnonymous;
+  bool get isGuest => _currentProfile == null || _currentProfile!.isAnonymous;
+  bool get hasUsedJoiningBonus => _hasUsedJoiningBonus;
+  String? get browserDeviceId => _browserDeviceId;
+  bool get canUseCoins => isAuthenticated && (_currentProfile?.coins ?? 0) > 0;
   bool get isGoogleUser {
     final user = _client?.auth.currentUser;
     if (user != null && !user.isAnonymous) return true;
@@ -89,6 +94,20 @@ class SupabaseService {
   Future<UserProfile> _loadOrCreateProfile() async {
     final prefs = await SharedPreferences.getInstance();
 
+    // 1. Save and remember browser data on first and subsequent visits
+    String? browserDeviceId = prefs.getString('baatkry_browser_device_id');
+    if (browserDeviceId == null) {
+      browserDeviceId = 'dev_${const Uuid().v4()}';
+      await prefs.setString('baatkry_browser_device_id', browserDeviceId);
+      await prefs.setString('baatkry_browser_first_visit_at', DateTime.now().toIso8601String());
+      await prefs.setInt('baatkry_browser_visit_count', 1);
+    } else {
+      final visits = prefs.getInt('baatkry_browser_visit_count') ?? 1;
+      await prefs.setInt('baatkry_browser_visit_count', visits + 1);
+    }
+    _browserDeviceId = browserDeviceId;
+    _hasUsedJoiningBonus = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
+
     if (_client != null && _client!.auth.currentUser != null) {
       final user = _client!.auth.currentUser!;
       final profile = await _fetchRemoteProfile(user.id) ??
@@ -96,21 +115,19 @@ class SupabaseService {
             id: user.id,
             isAnonymous: user.isAnonymous,
             nickname: user.isAnonymous ? 'Guest #${user.id.substring(0, 4)}' : (user.email?.split('@').first ?? 'User'),
+            coins: user.isAnonymous ? 0 : (_hasUsedJoiningBonus ? (prefs.getInt('local_user_coins') ?? 0) : 120),
           );
       _currentProfile = profile;
       _profileController.add(_currentProfile);
       return profile;
     }
 
-    // Local / Offline Guest fallback
+    // Local / Offline Guest fallback:
+    // Before signup/login, user cannot use coins (0 coins) and country is fixed to Global
     final savedId = prefs.getString('local_user_id') ?? const Uuid().v4();
     final savedNickname = prefs.getString('local_user_nickname') ?? 'Guest #${savedId.substring(0, 5)}';
-    final savedCoins = prefs.getInt('local_user_coins') ?? 120;
-    final savedIsVip = prefs.getBool('local_user_is_vip') ?? false;
     final savedGender = prefs.getString('local_user_gender') ?? 'unspecified';
     final savedInterests = prefs.getStringList('local_user_interests') ?? ['Music', 'Gaming'];
-    final savedCountry = prefs.getString('local_user_country') ?? 'Global (Worldwide)';
-    final savedCountryCode = prefs.getString('local_user_country_code') ?? 'ALL';
 
     await prefs.setString('local_user_id', savedId);
 
@@ -118,12 +135,12 @@ class SupabaseService {
       id: savedId,
       isAnonymous: true,
       nickname: savedNickname,
-      coins: savedCoins,
-      isVip: savedIsVip,
+      coins: 0, // Before signup, user cannot use coins
+      isVip: false,
       gender: savedGender,
       interests: savedInterests,
-      country: savedCountry,
-      countryCode: savedCountryCode,
+      country: 'Global (Worldwide)',
+      countryCode: 'ALL',
     );
 
     _profileController.add(_currentProfile);
@@ -409,23 +426,31 @@ class SupabaseService {
             'To resolve this in 30 seconds: Add your email to "Test users" in Google Cloud Console, or click "Publish App".',
           );
         }
-        rethrow;
+        if (!errText.contains('missingpluginexception')) {
+          rethrow;
+        }
       }
     }
 
     // Local simulation fallback for testing Google Sign-in immediately
+    final hasUsedBonus = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
+    final existingCoins = prefs.getInt('local_user_coins');
+    final initialCoins = hasUsedBonus ? (existingCoins ?? 0) : (existingCoins ?? 120);
+
     final profile = _currentProfile?.copyWith(
           isAnonymous: false,
           nickname: 'Google Explorer',
-          coins: (_currentProfile?.coins ?? 50) + 50,
+          coins: (_currentProfile?.coins != null && _currentProfile!.coins > 0)
+              ? _currentProfile!.coins
+              : initialCoins,
           isAgeVerified: true,
           age: 21,
         ) ??
-        const UserProfile(
+        UserProfile(
           id: 'google_verified_user',
           isAnonymous: false,
           nickname: 'Google Explorer',
-          coins: 120, // Initial signup bonus
+          coins: initialCoins,
           isAgeVerified: true,
           age: 21,
         );
@@ -473,16 +498,21 @@ class SupabaseService {
 
     // Local simulation fallback
     final prefs = await SharedPreferences.getInstance();
+    final hasUsedBonus = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
+    final initialCoins = hasUsedBonus ? (prefs.getInt('local_user_coins') ?? 0) : 120;
+
     final profile = _currentProfile?.copyWith(
           isAnonymous: false,
           nickname: nickname,
-          coins: (_currentProfile?.coins ?? 50) + 50,
+          coins: (_currentProfile?.coins != null && _currentProfile!.coins > 0)
+              ? _currentProfile!.coins
+              : initialCoins,
         ) ??
         UserProfile(
           id: const Uuid().v4(),
           isAnonymous: false,
           nickname: nickname,
-          coins: 120, // Initial bonus
+          coins: initialCoins,
         );
 
     await prefs.setString('local_user_nickname', nickname);
@@ -521,15 +551,22 @@ class SupabaseService {
 
     // Local simulation fallback
     final nickname = email.split('@').first;
+    final prefs = await SharedPreferences.getInstance();
+    final hasUsedBonus = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
+    final initialCoins = hasUsedBonus ? (prefs.getInt('local_user_coins') ?? 0) : 120;
+
     _currentProfile = _currentProfile?.copyWith(
           isAnonymous: false,
           nickname: nickname,
+          coins: (_currentProfile?.coins != null && _currentProfile!.coins > 0)
+              ? _currentProfile!.coins
+              : initialCoins,
         ) ??
         UserProfile(
           id: const Uuid().v4(),
           isAnonymous: false,
           nickname: nickname,
-          coins: 120, // Initial bonus
+          coins: initialCoins,
         );
     _profileController.add(_currentProfile);
     return true;
@@ -662,13 +699,20 @@ class SupabaseService {
     return true;
   }
 
-  /// Deduct coins (e.g. for +15s time boost or gender filter)
+  /// Deduct coins (e.g. for +15s time boost, VIP filter, or country filter)
   Future<bool> deductCoins(int amount) async {
-    if (_currentProfile == null || _currentProfile!.coins < amount) {
+    // Before signup or login, user cannot use coins
+    if (_currentProfile == null || _currentProfile!.isAnonymous) {
+      return false;
+    }
+    if (_currentProfile!.coins < amount) {
       return false;
     }
 
     final newBalance = _currentProfile!.coins - amount;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('baatkry_bonus_used_on_device', true);
+    _hasUsedJoiningBonus = true;
     return updateCoinsBalance(newBalance);
   }
 

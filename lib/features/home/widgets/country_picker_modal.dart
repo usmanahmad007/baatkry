@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../models/country.dart';
 import '../../../services/supabase_service.dart';
+import '../../auth/auth_modal.dart';
 import '../../shop/shop_modal.dart';
 
 class CountryPickerModal {
@@ -171,15 +172,28 @@ class CountryPickerModal {
                               return;
                             }
 
-                            // Moving to a specific country requires coins
+                            // 1. Without login, user cannot change the country from global to any country
+                            final isGuest = SupabaseService.instance.isGuest;
+                            if (isGuest) {
+                              _showLoginRequiredForCountryDialog(
+                                context: context,
+                                modalContext: modalCtx,
+                                targetCountry: country,
+                              );
+                              return;
+                            }
+
+                            // 2. Before signup user cannot use coins. If user used bonus coins, show "You need to add topup"
                             final freshCoins = SupabaseService.instance.currentProfile?.coins ?? 0;
                             if (freshCoins < cost) {
-                              _showInsufficientCoinsDialog(
+                              final hasUsedBonus = SupabaseService.instance.hasUsedJoiningBonus;
+                              _showTopupRequiredDialog(
                                 context: context,
                                 modalContext: modalCtx,
                                 requiredCoins: cost,
                                 currentCoins: freshCoins,
                                 targetCountry: country,
+                                hasUsedBonus: hasUsedBonus,
                               );
                               return;
                             }
@@ -282,12 +296,101 @@ class CountryPickerModal {
     );
   }
 
-  static void _showInsufficientCoinsDialog({
+  static void _showLoginRequiredForCountryDialog({
+    required BuildContext context,
+    required BuildContext modalContext,
+    required AppCountry targetCountry,
+  }) {
+    showDialog(
+      context: context,
+      builder: (alertCtx) => AlertDialog(
+        backgroundColor: AppColors.surfElevated(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.brandIndigo.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.lock_rounded, color: AppColors.brandIndigo, size: 24),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Sign In Required',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Without logging in, you cannot change from Global to any country.\n\nSign in with Google to unlock 200+ countries, receive bonus coins, and start chat filtering!',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.txtPrimary(context),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.brandIndigo.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.brandIndigo.withOpacity(0.2)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.public_rounded, color: AppColors.brandIndigo, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Global (Worldwide) chat is always 100% Free with unlimited stranger calls!',
+                      style: TextStyle(fontSize: 12, color: AppColors.brandIndigo, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(alertCtx).pop(),
+            child: Text('Keep Free Global', style: TextStyle(color: AppColors.txtSecondary(context))),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(alertCtx).pop();
+              Navigator.of(modalContext).pop();
+              AuthModal.show(context);
+            },
+            icon: const Icon(Icons.login_rounded, size: 16),
+            label: const Text('Sign In with Google', style: TextStyle(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.brandIndigo,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static void _showTopupRequiredDialog({
     required BuildContext context,
     required BuildContext modalContext,
     required int requiredCoins,
     required int currentCoins,
     required AppCountry targetCountry,
+    required bool hasUsedBonus,
   }) {
     showDialog(
       context: context,
@@ -307,7 +410,7 @@ class CountryPickerModal {
             const SizedBox(width: 10),
             const Expanded(
               child: Text(
-                'Coins Required',
+                'Top-up Required',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
               ),
             ),
@@ -318,7 +421,9 @@ class CountryPickerModal {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Filtering by ${targetCountry.flag} ${targetCountry.name} requires $requiredCoins Coins.\n\nYour current balance: $currentCoins Coins.',
+              hasUsedBonus
+                  ? 'You have already used your starter joining bonus. You need to add topup to filter by ${targetCountry.flag} ${targetCountry.name}.\n\nRequired: $requiredCoins Coins • Your Balance: $currentCoins Coins.'
+                  : 'Filtering by ${targetCountry.flag} ${targetCountry.name} requires $requiredCoins Coins.\n\nYour current balance: $currentCoins Coins. Please add topup to proceed.',
               style: TextStyle(
                 fontSize: 14,
                 color: AppColors.txtPrimary(context),
@@ -364,7 +469,7 @@ class CountryPickerModal {
               foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Get Coins', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Add Topup', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),

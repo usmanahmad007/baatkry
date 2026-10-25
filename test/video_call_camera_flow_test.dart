@@ -154,8 +154,11 @@ void main() {
 
     test('Country coin deduction and insufficient balance check', () async {
       await SupabaseService.instance.initialize();
+      // Must be logged in since guests cannot use coins or country filter
+      await SupabaseService.instance.signInWithGoogle();
       await SupabaseService.instance.updateCoinsBalance(120);
 
+      expect(SupabaseService.instance.isGuest, isFalse);
       expect(SupabaseService.instance.currentProfile?.coins, 120);
 
       // Selecting from ALL to specific (10 coins)
@@ -215,6 +218,52 @@ void main() {
 
       expect(prefs.getBool('baatkry_age_verified_18_plus'), isNull);
       expect(SupabaseService.instance.isGuest, isTrue);
+    });
+
+    test('Browser data persistence and guest coin locking', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // First visit initialization
+      await SupabaseService.instance.initialize();
+      final deviceId = prefs.getString('baatkry_browser_device_id');
+      expect(deviceId, isNotNull);
+      expect(deviceId!.startsWith('dev_'), isTrue);
+      expect(prefs.getString('baatkry_browser_first_visit_at'), isNotNull);
+      expect(prefs.getInt('baatkry_browser_visit_count'), 1);
+
+      // Verify guest user defaults
+      expect(SupabaseService.instance.isGuest, isTrue);
+      expect(SupabaseService.instance.currentProfile?.coins, 0); // Before signup user cannot use coins
+      expect(SupabaseService.instance.currentProfile?.countryCode, 'ALL');
+
+      // Before signup/login, deductCoins must return false (locked)
+      final canDeductAsGuest = await SupabaseService.instance.deductCoins(10);
+      expect(canDeductAsGuest, isFalse);
+    });
+
+    test('Joining bonus tracking prevents duplicate bonus on same browser device', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // 1. Initial Google login grants starter bonus (120 coins)
+      await SupabaseService.instance.signInWithGoogle();
+      expect(SupabaseService.instance.isGuest, isFalse);
+      expect(SupabaseService.instance.currentProfile?.coins, 120);
+
+      // 2. User spends coins (e.g. 10 coins on country filter)
+      final success = await SupabaseService.instance.deductCoins(10);
+      expect(success, isTrue);
+      expect(prefs.getBool('baatkry_bonus_used_on_device'), isTrue);
+      expect(SupabaseService.instance.hasUsedJoiningBonus, isTrue);
+
+      // 3. User signs out
+      await SupabaseService.instance.signOut();
+      expect(SupabaseService.instance.isGuest, isTrue);
+
+      // 4. Same device logs in again — bonus is NOT granted again! Existing balance preserved
+      await SupabaseService.instance.signInWithGoogle();
+      expect(SupabaseService.instance.currentProfile?.coins, 110); // NOT reset to 120
     });
   });
 }
