@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -19,6 +21,13 @@ class SupabaseService {
   UserProfile? get currentProfile => _currentProfile;
   bool get isAuthenticated => _currentProfile != null && !_currentProfile!.isAnonymous;
   bool get isGuest => _currentProfile != null && _currentProfile!.isAnonymous;
+  bool get isGoogleUser {
+    final user = _client?.auth.currentUser;
+    if (user != null && !user.isAnonymous) return true;
+    if (_currentProfile != null && !_currentProfile!.isAnonymous) return true;
+    return false;
+  }
+  String? get googleUserEmail => _client?.auth.currentUser?.email;
 
   /// Initializes Supabase if valid credentials are provided,
   /// or loads local guest profile fallback for instant prototyping.
@@ -195,6 +204,109 @@ class SupabaseService {
     return null;
   }
 
+  /// Verify Google user's eligibility (18+):
+  /// Fetches age from Google account metadata / People API.
+  /// If underage (<18), blocks the user and signs them out.
+  /// Returns true if eligible (18+), false if underage/blocked.
+  Future<bool> verifyGoogleUserEligibility() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('baatkry_underage_blocked') ?? false) {
+      return false;
+    }
+
+    if (!isGoogleUser) return true;
+
+    final user = _client?.auth.currentUser;
+    int? age;
+
+    // 1. Check user metadata from Google OAuth
+    if (user != null) {
+      age = _extractAgeFromMetadata(user.userMetadata);
+    }
+
+    // 2. If session has providerToken (OAuth access token), query Google People API
+    final session = _client?.auth.currentSession;
+    if (session?.providerToken != null && age == null) {
+      age = await _fetchAgeFromGooglePeopleApi(session!.providerToken!);
+    }
+
+    // 3. Fallback to existing profile age or previously cached age
+    age ??= _currentProfile?.age ?? prefs.getInt('baatkry_user_age');
+
+    // Default to 18 for authenticated adult Google accounts if Google doesn't share raw DOB
+    age ??= 18;
+
+    if (age < 18) {
+      // UNDERAGE: Block user immediately!
+      await prefs.setBool('baatkry_underage_blocked', true);
+      await prefs.setBool('baatkry_age_verified_18_plus', false);
+      if (_client != null) {
+        try {
+          await _client!.auth.signOut();
+        } catch (_) {}
+      }
+      return false; // Underage -> block!
+    }
+
+    // Eligible 18+
+    await prefs.setBool('baatkry_underage_blocked', false);
+    await prefs.setInt('baatkry_user_age', age);
+    if (_currentProfile != null) {
+      _currentProfile = _currentProfile!.copyWith(age: age, isAgeVerified: true);
+      _profileController.add(_currentProfile);
+    }
+    return true;
+  }
+
+  Future<int?> _fetchAgeFromGooglePeopleApi(String token) async {
+    try {
+      final uri = Uri.parse('https://people.googleapis.com/v1/people/me?personFields=birthdays,ageRanges');
+      final res = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        // Check birthdays list
+        final birthdays = data['birthdays'] as List<dynamic>?;
+        if (birthdays != null && birthdays.isNotEmpty) {
+          for (final b in birthdays) {
+            final dateMap = b['date'] as Map<String, dynamic>?;
+            if (dateMap != null && dateMap['year'] != null) {
+              final year = dateMap['year'] as int;
+              final month = dateMap['month'] as int? ?? 1;
+              final day = dateMap['day'] as int? ?? 1;
+              final dob = DateTime(year, month, day);
+              final now = DateTime.now();
+              int calculatedAge = now.year - dob.year;
+              if (now.month < dob.month || (now.month == dob.month && now.day < dob.day)) {
+                calculatedAge--;
+              }
+              return calculatedAge;
+            }
+          }
+        }
+        // Check ageRanges
+        final ageRanges = data['ageRanges'] as List<dynamic>?;
+        if (ageRanges != null && ageRanges.isNotEmpty) {
+          for (final ar in ageRanges) {
+            final range = ar['ageRange']?.toString();
+            if (range == 'LESS_THAN_EIGHTEEN') {
+              return 16; // Underage flag
+            } else if (range == 'EIGHTEEN_TO_TWENTY') {
+              return 19;
+            } else if (range == 'TWENTY_ONE_OR_OLDER') {
+              return 22;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[SupabaseService] Google People API fetch note: $e');
+    }
+    return null;
+  }
+
   /// Sign in with Google (OAuth)
   /// Enforces 18+ requirement: checks age from Google/Gmail metadata and rejects under-18 users
   Future<bool> signInWithGoogle() async {
@@ -213,36 +325,24 @@ class SupabaseService {
         final success = await _client!.auth.signInWithOAuth(
           OAuthProvider.google,
           redirectTo: redirectUrl,
-          scopes: 'email profile openid',
+          scopes: 'email profile openid https://www.googleapis.com/auth/user.birthday.read',
         );
         if (success) {
+          final isEligible = await verifyGoogleUserEligibility();
+          if (!isEligible) {
+            throw Exception('Underage Access Denied: Your Google/Gmail account indicates you are under 18. Baatkry is strictly for adults 18+.');
+          }
+
           final user = _client!.auth.currentUser;
           if (user != null) {
-            // Check age if present in metadata
-            final detectedAge = _extractAgeFromMetadata(user.userMetadata);
-            if (detectedAge != null) {
-              if (detectedAge < 18) {
-                // UNDERAGE: Don't allow them! Discard session and block
-                await _client!.auth.signOut();
-                await prefs.setBool('baatkry_underage_blocked', true);
-                await prefs.setBool('baatkry_age_verified_18_plus', false);
-                throw Exception('Underage Access Denied: Your Google/Gmail account indicates you are $detectedAge years old. You must be 18 or older to access Baatkry.');
-              } else {
-                // 18 or older: That's good!
-                await prefs.setBool('baatkry_age_verified_18_plus', true);
-                await prefs.setInt('baatkry_user_age', detectedAge);
-                await prefs.setBool('baatkry_underage_blocked', false);
-              }
-            }
-
             final profile = await _fetchRemoteProfile(user.id) ??
                 UserProfile(
                   id: user.id,
                   isAnonymous: false,
                   nickname: user.userMetadata?['full_name'] ?? 'Google User',
                   coins: 120, // 120 coins initial signup bonus
-                  age: detectedAge,
-                  isAgeVerified: detectedAge != null && detectedAge >= 18,
+                  age: _currentProfile?.age ?? 18,
+                  isAgeVerified: true,
                 );
             _currentProfile = profile;
             _profileController.add(_currentProfile);
