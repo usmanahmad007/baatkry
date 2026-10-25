@@ -16,6 +16,7 @@ enum MatchmakingStatus {
   matched,
   connecting,
   failed,
+  noUsersInCountry,
 }
 
 class MatchResult {
@@ -44,6 +45,9 @@ class MatchmakingService {
   static final MatchmakingService instance = MatchmakingService._internal();
   MatchmakingService._internal();
 
+  /// Search timeout for specific countries when no users are live (defaults to 60s)
+  static Duration countrySearchTimeout = const Duration(seconds: 60);
+
   RealtimeChannel? _channel;
   MatchmakingStatus _status = MatchmakingStatus.idle;
   final _statusController = StreamController<MatchmakingStatus>.broadcast();
@@ -65,6 +69,10 @@ class MatchmakingService {
     _status = MatchmakingStatus.searching;
     _statusController.add(_status);
 
+    final isSpecificCountry = countryFilter.isNotEmpty &&
+        !countryFilter.toLowerCase().contains('global') &&
+        countryFilter != 'ALL';
+
     final client = SupabaseService.instance.client;
 
     if (client != null && AppConfig.isSupabaseConfigured) {
@@ -74,7 +82,7 @@ class MatchmakingService {
 
         _channel!
           ..onPresenceSync((_) {
-            _checkPresenceForMatch(myProfile, genderFilter);
+            _checkPresenceForMatch(myProfile, genderFilter, countryFilter);
           })
           ..onBroadcast(
             event: 'match_event_${myProfile.id}',
@@ -111,6 +119,7 @@ class MatchmakingService {
               'gender': myProfile.gender,
               'interests': myProfile.interests,
               'country': myProfile.country,
+              'country_flag': myProfile.countryCode == 'ALL' ? '🌍' : AppCountry.fromCode(myProfile.countryCode).flag,
               'gender_filter': genderFilter,
               'country_filter': countryFilter,
               'joined_at': DateTime.now().toIso8601String(),
@@ -118,13 +127,23 @@ class MatchmakingService {
           }
         });
 
-        // Timeout fallback for testing when developing alone
         _searchTimeoutTimer?.cancel();
-        _searchTimeoutTimer = Timer(const Duration(seconds: 4), () {
-          if (_status == MatchmakingStatus.searching) {
-            _createSimulatedMatch(myProfile, genderFilter, countryFilter);
-          }
-        });
+        if (isSpecificCountry) {
+          // If searching for specific country, wait 1-2 minutes for active peers
+          _searchTimeoutTimer = Timer(countrySearchTimeout, () {
+            if (_status == MatchmakingStatus.searching) {
+              _status = MatchmakingStatus.noUsersInCountry;
+              _statusController.add(_status);
+            }
+          });
+        } else {
+          // Timeout fallback for testing when developing alone in Global mode
+          _searchTimeoutTimer = Timer(const Duration(seconds: 4), () {
+            if (_status == MatchmakingStatus.searching) {
+              _createSimulatedMatch(myProfile, genderFilter, countryFilter);
+            }
+          });
+        }
         return;
       } catch (e) {
         debugPrint('[MatchmakingService] Realtime queue note: $e. Using local match generator.');
@@ -133,14 +152,23 @@ class MatchmakingService {
 
     // Local / Offline Simulation for testing without server backend
     _searchTimeoutTimer?.cancel();
-    _searchTimeoutTimer = Timer(const Duration(milliseconds: 2200), () {
-      if (_status == MatchmakingStatus.searching) {
-        _createSimulatedMatch(myProfile, genderFilter, countryFilter);
-      }
-    });
+    if (isSpecificCountry) {
+      _searchTimeoutTimer = Timer(countrySearchTimeout, () {
+        if (_status == MatchmakingStatus.searching) {
+          _status = MatchmakingStatus.noUsersInCountry;
+          _statusController.add(_status);
+        }
+      });
+    } else {
+      _searchTimeoutTimer = Timer(const Duration(milliseconds: 2200), () {
+        if (_status == MatchmakingStatus.searching) {
+          _createSimulatedMatch(myProfile, genderFilter, countryFilter);
+        }
+      });
+    }
   }
 
-  void _checkPresenceForMatch(UserProfile myProfile, String genderFilter) {
+  void _checkPresenceForMatch(UserProfile myProfile, String genderFilter, [String countryFilter = 'Global (Worldwide)']) {
     if (_channel == null || _status != MatchmakingStatus.searching) return;
 
     final presenceState = _channel!.presenceState();
@@ -159,7 +187,13 @@ class MatchmakingService {
           final myFilterSatisfied = genderFilter == 'everyone' || genderFilter == peerGender;
           final peerFilterSatisfied = peerFilter == 'everyone' || peerFilter == myProfile.gender;
 
-          if (myFilterSatisfied && peerFilterSatisfied) {
+          final isSpecific = countryFilter.isNotEmpty &&
+              !countryFilter.toLowerCase().contains('global') &&
+              countryFilter != 'ALL';
+          final peerCountry = payload['country'] as String? ?? 'Global (Worldwide)';
+          final countrySatisfied = !isSpecific || peerCountry.toLowerCase() == countryFilter.toLowerCase();
+
+          if (myFilterSatisfied && peerFilterSatisfied && countrySatisfied) {
             waitingPeers.add(payload);
           }
         }
@@ -186,6 +220,8 @@ class MatchmakingService {
       final peerId = peer['user_id'] as String;
       final peerName = peer['nickname'] as String? ?? 'Stranger';
       final peerGender = peer['gender'] as String? ?? 'unspecified';
+      final peerCountry = peer['country'] as String? ?? 'Global (Worldwide)';
+      final peerCountryFlag = peer['country_flag'] as String? ?? '🌍';
 
       // Deterministic coordinator
       if (myProfile.id.compareTo(peerId) < 0) {
@@ -198,6 +234,8 @@ class MatchmakingService {
             'peer_id': myProfile.id,
             'peer_name': myProfile.nickname,
             'peer_gender': myProfile.gender,
+            'peer_country': myProfile.country,
+            'peer_country_flag': myProfile.countryCode == 'ALL' ? '🌍' : AppCountry.fromCode(myProfile.countryCode).flag,
           },
         );
 
@@ -213,6 +251,8 @@ class MatchmakingService {
           peerId: peerId,
           peerName: peerName,
           peerGender: peerGender,
+          peerCountry: peerCountry,
+          peerCountryFlag: peerCountryFlag,
         ));
       }
     }

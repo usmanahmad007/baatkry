@@ -13,9 +13,11 @@ import '../../services/livekit_service.dart';
 import '../../services/matchmaking_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
+import '../home/widgets/country_picker_modal.dart';
 import '../moderation/eula_modal.dart';
 import '../moderation/report_modal.dart';
 import '../shop/shop_modal.dart';
+import '../../models/country.dart';
 
 class VideoCallScreen extends StatefulWidget {
   final MatchResult matchResult;
@@ -46,6 +48,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   StreamSubscription<void>? _peerDisconnectedSub;
   StreamSubscription<UserProfile?>? _profileSub;
   StreamSubscription<MatchResult>? _matchSub;
+  StreamSubscription<MatchmakingStatus>? _statusSub;
+  late String _activeCountryFilter;
 
   VideoTrack? _remoteVideoTrack;
   LocalVideoTrack? _localVideoTrack;
@@ -73,6 +77,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void initState() {
     super.initState();
     _activeMatchResult = widget.matchResult;
+    _activeCountryFilter = widget.countryFilter;
     final filter = widget.genderFilter.toLowerCase().trim();
     final requestedVip = filter.isNotEmpty && filter != 'everyone' && filter != 'unspecified';
     final initialCoins = SupabaseService.instance.currentProfile?.coins ?? widget.myProfile.coins;
@@ -771,6 +776,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _callTimer?.cancel();
     _profileSub?.cancel();
     _matchSub?.cancel();
+    _statusSub?.cancel();
     if (_isGenderFiltered) {
       SupabaseService.instance.updateCoinsBalance(_coinsRemaining);
     }
@@ -835,8 +841,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
     // Listen for next match
     _matchSub?.cancel();
+    _statusSub?.cancel();
+
     _matchSub = MatchmakingService.instance.matchStream.listen((newResult) async {
       _matchSub?.cancel();
+      _statusSub?.cancel();
       if (!mounted) return;
 
       setState(() {
@@ -853,13 +862,153 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       }
     });
 
+    _statusSub = MatchmakingService.instance.statusStream.listen((status) {
+      if (!mounted) return;
+      if (status == MatchmakingStatus.noUsersInCountry && _isSearchingNext) {
+        _showNoUsersInCountryDialog();
+      }
+    });
+
     final currentProf = SupabaseService.instance.currentProfile ?? widget.myProfile;
     final updatedProf = currentProf.copyWith(coins: _coinsRemaining);
 
     MatchmakingService.instance.findMatch(
       myProfile: updatedProf,
       genderFilter: _activeGenderFilter,
-      countryFilter: widget.countryFilter,
+      countryFilter: _activeCountryFilter,
+    );
+  }
+
+  void _showNoUsersInCountryDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfElevated(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.brandPink.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.people_outline_rounded, color: AppColors.brandPink, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Live Users Busy',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Currently all live users from $_activeCountryFilter are chatting with someone please wait or switch to any other country you want.',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: AppColors.txtPrimary(context),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.brandIndigo.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.brandIndigo.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.public_rounded, color: AppColors.brandIndigo, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Global (Worldwide) queue matches immediately with 0 waiting time!',
+                      style: TextStyle(fontSize: 12, color: AppColors.txtSecondary(context)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    _onSkipToNext();
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    side: BorderSide(color: AppColors.border(context)),
+                  ),
+                  child: const Text('Keep Waiting', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    _openCountryPicker();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brandIndigo,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Switch Country', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _activeCountryFilter = 'Global (Worldwide)';
+                });
+                _onSkipToNext();
+              },
+              icon: const Text('🌍', style: TextStyle(fontSize: 16)),
+              label: const Text(
+                'Switch to Global (Instant & Free)',
+                style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openCountryPicker() {
+    CountryPickerModal.show(
+      context: context,
+      currentCountryCode: AppCountry.fromName(_activeCountryFilter).code,
+      onCountrySelected: (country, coinsDeducted) {
+        setState(() {
+          _activeCountryFilter = country.name;
+        });
+        _onSkipToNext();
+      },
     );
   }
 

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/country.dart';
 import '../../models/user_profile.dart';
 import '../../services/matchmaking_service.dart';
 import '../../services/supabase_service.dart';
 import '../call/video_call_screen.dart';
+import '../home/widgets/country_picker_modal.dart';
 
 class RadarScreen extends StatefulWidget {
   final UserProfile profile;
@@ -25,11 +27,15 @@ class RadarScreen extends StatefulWidget {
 class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   StreamSubscription<MatchResult>? _matchSub;
+  StreamSubscription<MatchmakingStatus>? _statusSub;
+  late String _activeCountryFilter;
   String _statusText = 'Looking for someone special...';
+  bool _isDialogShowing = false;
 
   @override
   void initState() {
     super.initState();
+    _activeCountryFilter = widget.countryFilter;
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
@@ -39,6 +45,9 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
   }
 
   void _startMatchmaking() {
+    _matchSub?.cancel();
+    _statusSub?.cancel();
+
     _matchSub = MatchmakingService.instance.matchStream.listen((result) {
       if (mounted) {
         setState(() => _statusText = 'Match found! Connecting video...');
@@ -48,23 +57,173 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
               matchResult: result,
               myProfile: SupabaseService.instance.currentProfile ?? widget.profile,
               genderFilter: widget.genderFilter,
-              countryFilter: widget.countryFilter,
+              countryFilter: _activeCountryFilter,
             ),
           ),
         );
       }
     });
 
+    _statusSub = MatchmakingService.instance.statusStream.listen((status) {
+      if (!mounted) return;
+      if (status == MatchmakingStatus.noUsersInCountry && !_isDialogShowing) {
+        _showNoUsersInCountryDialog();
+      }
+    });
+
     MatchmakingService.instance.findMatch(
       myProfile: widget.profile,
       genderFilter: widget.genderFilter,
-      countryFilter: widget.countryFilter,
+      countryFilter: _activeCountryFilter,
+    );
+  }
+
+  void _showNoUsersInCountryDialog() {
+    _isDialogShowing = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfElevated(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.brandPink.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.people_outline_rounded, color: AppColors.brandPink, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Live Users Busy',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Currently all live users from $_activeCountryFilter are chatting with someone please wait or switch to any other country you want.',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: AppColors.txtPrimary(context),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.brandIndigo.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.brandIndigo.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.public_rounded, color: AppColors.brandIndigo, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Global (Worldwide) queue matches immediately with 0 waiting time!',
+                      style: TextStyle(fontSize: 12, color: AppColors.txtSecondary(context)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    _isDialogShowing = false;
+                    Navigator.of(ctx).pop();
+                    setState(() {
+                      _statusText = 'Waiting for available users in $_activeCountryFilter...';
+                    });
+                    _startMatchmaking();
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    side: BorderSide(color: AppColors.border(context)),
+                  ),
+                  child: const Text('Keep Waiting', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    _isDialogShowing = false;
+                    Navigator.of(ctx).pop();
+                    _openCountryPicker();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brandIndigo,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Switch Country', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: () {
+                _isDialogShowing = false;
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _activeCountryFilter = 'Global (Worldwide)';
+                  _statusText = 'Connecting with strangers worldwide 🌍...';
+                });
+                _startMatchmaking();
+              },
+              icon: const Text('🌍', style: TextStyle(fontSize: 16)),
+              label: const Text(
+                'Switch to Global (Instant & Free)',
+                style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openCountryPicker() {
+    CountryPickerModal.show(
+      context: context,
+      currentCountryCode: AppCountry.fromName(_activeCountryFilter).code,
+      onCountrySelected: (country, coinsDeducted) {
+        setState(() {
+          _activeCountryFilter = country.name;
+          _statusText = 'Searching for users in ${country.name}...';
+        });
+        _startMatchmaking();
+      },
     );
   }
 
   @override
   void dispose() {
     _matchSub?.cancel();
+    _statusSub?.cancel();
     _animController.dispose();
     super.dispose();
   }
@@ -202,13 +361,13 @@ class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStat
               ),
               const SizedBox(height: 8),
               Text(
-                widget.countryFilter == 'Global (Worldwide)' || widget.countryFilter == 'ALL'
+                _activeCountryFilter == 'Global (Worldwide)' || _activeCountryFilter == 'ALL'
                     ? (widget.genderFilter == 'everyone'
                         ? 'Connecting with random strangers worldwide 🌍...'
                         : 'Searching for ${widget.genderFilter} worldwide 🌍...')
                     : (widget.genderFilter == 'everyone'
-                        ? 'Connecting with strangers in ${widget.countryFilter}...'
-                        : 'Searching for ${widget.genderFilter} in ${widget.countryFilter}...'),
+                        ? 'Connecting with strangers in $_activeCountryFilter...'
+                        : 'Searching for ${widget.genderFilter} in $_activeCountryFilter...'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,

@@ -4,6 +4,7 @@ import 'package:monkey_omegle_app/features/moderation/age_consent_modal.dart';
 import 'package:monkey_omegle_app/models/country.dart';
 import 'package:monkey_omegle_app/models/user_profile.dart';
 import 'package:monkey_omegle_app/services/livekit_service.dart';
+import 'package:monkey_omegle_app/services/matchmaking_service.dart';
 import 'package:monkey_omegle_app/services/permission_service.dart';
 import 'package:monkey_omegle_app/services/supabase_service.dart';
 
@@ -132,6 +133,77 @@ void main() {
       final deserialized = UserProfile.fromMap(map);
       expect(deserialized.country, 'United States');
       expect(deserialized.countryCode, 'US');
+
+      // Coin cost rules for country selection
+      // 1. ALL to specific -> 10 coins
+      expect(AppCountry.getSelectionCost(currentCode: 'ALL', targetCode: 'US'), 10);
+      expect(AppCountry.getSelectionCost(currentCode: 'ALL', targetCode: 'PK'), 10);
+      expect(AppCountry.getSelectionCost(currentCode: 'ALL', targetCode: 'ALL'), 0);
+
+      // 2. Specific to another specific -> 5 coins
+      expect(AppCountry.getSelectionCost(currentCode: 'US', targetCode: 'PK'), 5);
+      expect(AppCountry.getSelectionCost(currentCode: 'PK', targetCode: 'FR'), 5);
+
+      // 3. Re-selecting same country -> 0 coins
+      expect(AppCountry.getSelectionCost(currentCode: 'US', targetCode: 'US'), 0);
+
+      // 4. Moving from specific back to ALL -> 0 coins (Free)
+      expect(AppCountry.getSelectionCost(currentCode: 'US', targetCode: 'ALL'), 0);
+      expect(AppCountry.getSelectionCost(currentCode: 'PK', targetCode: 'ALL'), 0);
+    });
+
+    test('Country coin deduction and insufficient balance check', () async {
+      await SupabaseService.instance.initialize();
+      await SupabaseService.instance.updateCoinsBalance(120);
+
+      expect(SupabaseService.instance.currentProfile?.coins, 120);
+
+      // Selecting from ALL to specific (10 coins)
+      final cost1 = AppCountry.getSelectionCost(currentCode: 'ALL', targetCode: 'US');
+      expect(cost1, 10);
+      final success1 = await SupabaseService.instance.deductCoins(cost1);
+      expect(success1, isTrue);
+      expect(SupabaseService.instance.currentProfile?.coins, 110);
+
+      // Switching from specific to another specific (5 coins)
+      final cost2 = AppCountry.getSelectionCost(currentCode: 'US', targetCode: 'FR');
+      expect(cost2, 5);
+      final success2 = await SupabaseService.instance.deductCoins(cost2);
+      expect(success2, isTrue);
+      expect(SupabaseService.instance.currentProfile?.coins, 105);
+
+      // Setting balance below cost (e.g. 3 coins)
+      await SupabaseService.instance.updateCoinsBalance(3);
+      final cost3 = AppCountry.getSelectionCost(currentCode: 'FR', targetCode: 'DE');
+      expect(cost3, 5);
+      final success3 = await SupabaseService.instance.deductCoins(cost3);
+      expect(success3, isFalse);
+      expect(SupabaseService.instance.currentProfile?.coins, 3);
+    });
+
+    test('Matchmaking specific country timeout triggers noUsersInCountry status', () async {
+      final originalTimeout = MatchmakingService.countrySearchTimeout;
+      // Configure short timeout for test
+      MatchmakingService.countrySearchTimeout = const Duration(milliseconds: 150);
+
+      MatchmakingStatus? observedStatus;
+      final sub = MatchmakingService.instance.statusStream.listen((s) {
+        if (s == MatchmakingStatus.noUsersInCountry) {
+          observedStatus = s;
+        }
+      });
+
+      const profile = UserProfile(id: 'test_user_country_filter');
+      await MatchmakingService.instance.findMatch(
+        myProfile: profile,
+        countryFilter: 'Iceland',
+      );
+
+      await Future.delayed(const Duration(milliseconds: 250));
+      expect(observedStatus, MatchmakingStatus.noUsersInCountry);
+
+      await sub.cancel();
+      MatchmakingService.countrySearchTimeout = originalTimeout;
     });
 
     test('SupabaseService signOut clears session and resets to guest', () async {

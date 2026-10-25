@@ -22,6 +22,25 @@ class AppCountry {
       orElse: () => kAllCountries.first,
     );
   }
+
+  /// Calculate coin cost for changing country filter:
+  /// - Changing to Global ('ALL') or re-selecting current: 0 coins (Free)
+  /// - Changing from Global ('ALL') to any specific country: 10 coins
+  /// - Changing from one specific country to another specific country: 5 coins
+  static int getSelectionCost({
+    required String currentCode,
+    required String targetCode,
+  }) {
+    final cur = currentCode.toUpperCase();
+    final tgt = targetCode.toUpperCase();
+    if (tgt == 'ALL' || tgt == cur) {
+      return 0;
+    }
+    if (cur == 'ALL') {
+      return 10;
+    }
+    return 5;
+  }
 }
 
 const List<AppCountry> kAllCountries = [

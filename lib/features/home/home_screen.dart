@@ -15,6 +15,8 @@ import '../matchmaking/radar_screen.dart';
 import '../moderation/age_consent_modal.dart';
 import '../moderation/eula_modal.dart';
 import '../shop/shop_modal.dart';
+import 'widgets/country_picker_modal.dart';
+import 'widgets/global_live_map_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -530,128 +532,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showCountryPickerModal() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    String searchQuery = '';
-
-    showModalBottomSheet(
+    CountryPickerModal.show(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (modalCtx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            final filteredCountries = kAllCountries.where((c) {
-              if (searchQuery.isEmpty) return true;
-              return c.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-                  c.code.toLowerCase().contains(searchQuery.toLowerCase());
-            }).toList();
-
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.72,
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                border: Border(top: BorderSide(color: AppColors.border(context), width: 1.5)),
-              ),
-              child: Column(
-                children: [
-                  // Drag Handle
-                  Center(
-                    child: Container(
-                      width: 44,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.white24 : Colors.black12,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Select Country / Region',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.txtPrimary(context),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(modalCtx).pop(),
-                        icon: const Icon(Icons.close_rounded, size: 20),
-                        color: AppColors.txtSecondary(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  // Search Field
-                  TextField(
-                    onChanged: (val) => setModalState(() => searchQuery = val),
-                    decoration: InputDecoration(
-                      hintText: 'Search country...',
-                      hintStyle: TextStyle(color: AppColors.txtMuted(context), fontSize: 13),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                      filled: true,
-                      fillColor: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: AppColors.border(context)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: AppColors.border(context)),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: filteredCountries.length,
-                      separatorBuilder: (_, __) => Divider(
-                        height: 1,
-                        color: AppColors.border(context).withOpacity(0.5),
-                      ),
-                      itemBuilder: (_, index) {
-                        final country = filteredCountries[index];
-                        final isSelected = _selectedCountryCode == country.code;
-
-                        return ListTile(
-                          onTap: () {
-                            setState(() {
-                              _selectedCountry = country.name;
-                              _selectedCountryCode = country.code;
-                              _selectedCountryFlag = country.flag;
-                            });
-                            SupabaseService.instance.updateProfile(
-                              country: country.name,
-                              countryCode: country.code,
-                            );
-                            Navigator.of(modalCtx).pop();
-                          },
-                          leading: Text(country.flag, style: const TextStyle(fontSize: 24)),
-                          title: Text(
-                            country.name,
-                            style: TextStyle(
-                              color: isSelected ? AppColors.brandIndigo : AppColors.txtPrimary(context),
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              fontSize: 14,
-                            ),
-                          ),
-                          trailing: isSelected
-                              ? const Icon(Icons.check_circle_rounded, color: AppColors.brandIndigo, size: 20)
-                              : null,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
+      currentCountryCode: _selectedCountryCode,
+      onCountrySelected: (country, coinsDeducted) {
+        setState(() {
+          _selectedCountry = country.name;
+          _selectedCountryCode = country.code;
+          _selectedCountryFlag = country.flag;
+        });
+        SupabaseService.instance.updateProfile(
+          country: country.name,
+          countryCode: country.code,
         );
       },
     );
@@ -1271,105 +1163,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Country / Region Filter Selector (Worldwide vs Specific Countries)
+  // Global Live Users & Interactive Map + Country Filter
   // ---------------------------------------------------------------------------
   Widget _buildCountryFilterSection() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: AppColors.cardGrad(context),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.border(context)),
-        boxShadow: AppColors.isDark(context)
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Match Region / Country:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.txtPrimary(context)),
-              ),
-              Text(
-                _selectedCountryCode == 'ALL' ? 'Worldwide 🌍' : 'Filtered 🎯',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: _selectedCountryCode == 'ALL' ? AppColors.success : AppColors.brandIndigo,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          InkWell(
-            onTap: _showCountryPickerModal,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.surfElevated(context),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border(context)),
-              ),
-              child: Row(
-                children: [
-                  Text(_selectedCountryFlag, style: const TextStyle(fontSize: 22)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _selectedCountry,
-                          style: TextStyle(
-                            color: AppColors.txtPrimary(context),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          _selectedCountryCode == 'ALL'
-                              ? 'Connect with anyone from any country'
-                              : 'Prefer matches from this country',
-                          style: TextStyle(
-                            color: AppColors.txtSecondary(context),
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: AppColors.brandIndigo.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Change', style: TextStyle(color: AppColors.brandIndigo, fontWeight: FontWeight.bold, fontSize: 11)),
-                        SizedBox(width: 4),
-                        Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: AppColors.brandIndigo),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+    return GlobalLiveMapWidget(
+      selectedCountry: _selectedCountry,
+      selectedCountryCode: _selectedCountryCode,
+      selectedCountryFlag: _selectedCountryFlag,
+      onOpenCountryPicker: _showCountryPickerModal,
     );
   }
 
