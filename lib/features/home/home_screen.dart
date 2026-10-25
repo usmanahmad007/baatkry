@@ -540,7 +540,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (modalCtx) {
         return StatefulBuilder(
           builder: (ctx, setModalState) {
-            final filteredCountries = kPopularCountries.where((c) {
+            final filteredCountries = kAllCountries.where((c) {
               if (searchQuery.isEmpty) return true;
               return c.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
                   c.code.toLowerCase().contains(searchQuery.toLowerCase());

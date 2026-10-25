@@ -102,6 +102,10 @@ void main() {
 
     test('Country model and matchmaking country filter support', () async {
       expect(kPopularCountries.isNotEmpty, isTrue);
+      expect(kAllCountries.length, greaterThanOrEqualTo(200));
+      expect(kAllCountries.first.code, 'ALL');
+      expect(kAllCountries.first.name, 'Global (Worldwide)');
+
       final us = AppCountry.fromCode('US');
       expect(us.name, 'United States');
       expect(us.flag, '🇺🇸');
@@ -109,6 +113,10 @@ void main() {
       final pk = AppCountry.fromName('Pakistan');
       expect(pk.code, 'PK');
       expect(pk.flag, '🇵🇰');
+
+      final zw = AppCountry.fromCode('ZW');
+      expect(zw.name, 'Zimbabwe');
+      expect(zw.flag, '🇿🇼');
 
       // User profile country defaults and serialization
       const profile = UserProfile(
