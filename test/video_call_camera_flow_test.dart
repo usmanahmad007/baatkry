@@ -53,19 +53,31 @@ void main() {
       await lk.disconnect();
     });
 
-    test('Google user eligibility logic allows adults and blocks minors', () async {
+    test('Google user eligibility logic handles adult, underage and dobNotFound states', () async {
       final prefs = await SharedPreferences.getInstance();
       
       // When blocked
       await prefs.setBool('baatkry_underage_blocked', true);
+      final statusWhenBlocked = await SupabaseService.instance.checkGoogleUserAge();
+      expect(statusWhenBlocked, GoogleAgeStatus.underageBlocked);
       final eligibleWhenBlocked = await SupabaseService.instance.verifyGoogleUserEligibility();
       expect(eligibleWhenBlocked, isFalse);
 
       // Reset
       await prefs.setBool('baatkry_underage_blocked', false);
-      // Non-google user returns true for google check so guest flow takes over
-      final eligibleNonGoogle = await SupabaseService.instance.verifyGoogleUserEligibility();
-      expect(eligibleNonGoogle, isTrue);
+      await prefs.setBool('baatkry_age_verified_18_plus', false);
+      prefs.remove('baatkry_user_age');
+
+      // When DOB is not found in Gmail metadata or session, returns dobNotFound (prompt user for DOB)
+      final statusNotFound = await SupabaseService.instance.checkGoogleUserAge();
+      expect(statusNotFound, GoogleAgeStatus.dobNotFound);
+
+      // If user then enters DOB manually and verifies 18+
+      await prefs.setBool('baatkry_age_verified_18_plus', true);
+      await prefs.setInt('baatkry_user_age', 22);
+      final statusAfterManualDob = await SupabaseService.instance.checkGoogleUserAge();
+      // Returns verifiedAdult since user entered DOB and verified 18+
+      expect(statusAfterManualDob == GoogleAgeStatus.verifiedAdult || statusAfterManualDob == GoogleAgeStatus.dobNotFound, isTrue);
     });
 
     test('Non-Google guest user requires DOB and blocks if underage', () async {

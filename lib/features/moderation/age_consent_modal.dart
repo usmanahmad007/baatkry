@@ -8,11 +8,13 @@ import '../../services/supabase_service.dart';
 class AgeConsentModal extends StatefulWidget {
   final VoidCallback onVerified;
   final bool isGoogleUser;
+  final bool googleAgeVerified;
 
   const AgeConsentModal({
     super.key,
     required this.onVerified,
     this.isGoogleUser = false,
+    this.googleAgeVerified = false,
   });
 
   static const String keyAgeVerified = 'baatkry_age_verified_18_plus';
@@ -44,19 +46,22 @@ class AgeConsentModal extends StatefulWidget {
     }
 
     final isGoogle = SupabaseService.instance.isGoogleUser;
+    bool googleAgeVerified = false;
 
     // If user logged in from Google, verify DOB / eligibility from their Google account
     if (isGoogle) {
-      final isEligible = await SupabaseService.instance.verifyGoogleUserEligibility();
-      if (!isEligible) {
+      final googleStatus = await SupabaseService.instance.checkGoogleUserAge();
+      if (googleStatus == GoogleAgeStatus.underageBlocked) {
         if (context.mounted) {
           showUnderageBlockedDialog(context);
         }
         return;
       }
+      googleAgeVerified = (googleStatus == GoogleAgeStatus.verifiedAdult);
     }
 
     final verified = await isAgeVerified();
+    // If age is already verified (either confirmed from Google or previously entered via DOB picker)
     if (verified) {
       onVerified();
       return;
@@ -69,6 +74,7 @@ class AgeConsentModal extends StatefulWidget {
         builder: (_) => AgeConsentModal(
           onVerified: onVerified,
           isGoogleUser: isGoogle,
+          googleAgeVerified: googleAgeVerified,
         ),
       );
     }
@@ -155,10 +161,11 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
   void initState() {
     super.initState();
     _selectedDob = null;
-    _calculatedAge = widget.isGoogleUser
+    final hasVerifiedGoogleAge = widget.isGoogleUser && widget.googleAgeVerified;
+    _calculatedAge = hasVerifiedGoogleAge
         ? (SupabaseService.instance.currentProfile?.age ?? 18)
         : null;
-    _confirmedTerms = widget.isGoogleUser;
+    _confirmedTerms = hasVerifiedGoogleAge;
   }
 
   int _computeAge(DateTime dob) {
@@ -223,7 +230,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
   }
 
   Future<void> _onAcceptAndProceed() async {
-    final effectiveAge = widget.isGoogleUser
+    final effectiveAge = (widget.isGoogleUser && widget.googleAgeVerified)
         ? (_calculatedAge ?? SupabaseService.instance.currentProfile?.age ?? 18)
         : _calculatedAge;
 
@@ -321,7 +328,9 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    widget.isGoogleUser ? Icons.verified_rounded : Icons.verified_user_rounded,
+                    (widget.isGoogleUser && widget.googleAgeVerified)
+                        ? Icons.verified_rounded
+                        : Icons.verified_user_rounded,
                     color: Colors.white,
                     size: 18,
                   ),
@@ -329,9 +338,11 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    widget.isGoogleUser
+                    (widget.isGoogleUser && widget.googleAgeVerified)
                         ? 'Google Verified Consent'
-                        : '18+ Verification & Video Access',
+                        : (widget.isGoogleUser
+                            ? '18+ Date of Birth Required'
+                            : '18+ Verification & Video Access'),
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -357,9 +368,11 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
 
             // Subtle description
             Text(
-              widget.isGoogleUser
+              (widget.isGoogleUser && widget.googleAgeVerified)
                   ? 'Your 18+ eligibility is confirmed from your Google account. Confirm community rules to start chatting.'
-                  : 'Enter your birth certificate date of birth to verify 18+ access and enable live video chat.',
+                  : (widget.isGoogleUser
+                      ? 'Date of birth was not found in your Google account. Please enter your birth certificate date of birth to verify 18+ access.'
+                      : 'Enter your birth certificate date of birth to verify 18+ access and enable live video chat.'),
               style: TextStyle(
                 color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                 fontSize: 12,
@@ -368,7 +381,7 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
             ),
             const SizedBox(height: 14),
 
-            if (widget.isGoogleUser) ...[
+            if (widget.isGoogleUser && widget.googleAgeVerified) ...[
               // Google account verified card
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -540,6 +553,53 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
                 ),
               ),
             ] else ...[
+              if (widget.isGoogleUser) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: (isDark ? Colors.white : Colors.black).withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? AppColors.darkSurfaceBorder : AppColors.lightSurfaceBorder,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_circle_outlined, size: 16, color: AppColors.brandIndigo),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          SupabaseService.instance.googleUserEmail ?? 'Google Account',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'DOB Required',
+                          style: TextStyle(
+                            color: AppColors.warning,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+
               // Sleek Interactive Date Picker Input Card
               InkWell(
                 onTap: _pickDateOfBirth,

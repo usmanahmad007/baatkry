@@ -9,6 +9,12 @@ import 'package:uuid/uuid.dart';
 import '../core/config/app_config.dart';
 import '../models/user_profile.dart';
 
+enum GoogleAgeStatus {
+  verifiedAdult,   // Age 18+ confirmed via Google/Gmail metadata or People API
+  underageBlocked, // Age < 18 confirmed via Google/Gmail metadata or People API
+  dobNotFound,     // Google/Gmail did not provide age or DOB; user must enter DOB manually
+}
+
 class SupabaseService {
   static final SupabaseService instance = SupabaseService._internal();
   SupabaseService._internal();
@@ -156,6 +162,15 @@ class SupabaseService {
     return _loadOrCreateProfile();
   }
 
+  int _computeAgeFromDate(DateTime date) {
+    final now = DateTime.now();
+    int age = now.year - date.year;
+    if (now.month < date.month || (now.month == date.month && now.day < date.day)) {
+      age--;
+    }
+    return age;
+  }
+
   /// Extract age from Google OAuth / Gmail user metadata
   int? _extractAgeFromMetadata(Map<String, dynamic>? metadata) {
     if (metadata == null) return null;
@@ -178,14 +193,24 @@ class SupabaseService {
       try {
         final date = DateTime.tryParse(possibleDateStr.toString());
         if (date != null) {
-          final now = DateTime.now();
-          int age = now.year - date.year;
-          if (now.month < date.month || (now.month == date.month && now.day < date.day)) {
-            age--;
-          }
-          return age;
+          return _computeAgeFromDate(date);
         }
       } catch (_) {}
+    }
+
+    // Check Google People structure (birthdays list)
+    if (metadata['birthdays'] is List && (metadata['birthdays'] as List).isNotEmpty) {
+      for (final item in metadata['birthdays'] as List) {
+        if (item is Map && item['date'] is Map) {
+          final dateMap = item['date'] as Map;
+          final year = int.tryParse(dateMap['year']?.toString() ?? '');
+          if (year != null) {
+            final month = int.tryParse(dateMap['month']?.toString() ?? '1') ?? 1;
+            final day = int.tryParse(dateMap['day']?.toString() ?? '1') ?? 1;
+            return _computeAgeFromDate(DateTime(year, month, day));
+          }
+        }
+      }
     }
 
     // Check age_range if provided by Google People
@@ -204,17 +229,17 @@ class SupabaseService {
     return null;
   }
 
-  /// Verify Google user's eligibility (18+):
-  /// Fetches age from Google account metadata / People API.
-  /// If underage (<18), blocks the user and signs them out.
-  /// Returns true if eligible (18+), false if underage/blocked.
-  Future<bool> verifyGoogleUserEligibility() async {
+  /// Check Google user's age from Google/Gmail:
+  /// - returns [GoogleAgeStatus.underageBlocked] if Google reports age < 18 (blocks user & signs out).
+  /// - returns [GoogleAgeStatus.verifiedAdult] if Google reports age >= 18 or user previously verified age.
+  /// - returns [GoogleAgeStatus.dobNotFound] if Google does NOT provide age or DOB (app must ask user to put DOB).
+  Future<GoogleAgeStatus> checkGoogleUserAge() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('baatkry_underage_blocked') ?? false) {
-      return false;
+      return GoogleAgeStatus.underageBlocked;
     }
 
-    if (!isGoogleUser) return true;
+    if (!isGoogleUser) return GoogleAgeStatus.dobNotFound;
 
     final user = _client?.auth.currentUser;
     int? age;
@@ -222,40 +247,61 @@ class SupabaseService {
     // 1. Check user metadata from Google OAuth
     if (user != null) {
       age = _extractAgeFromMetadata(user.userMetadata);
+      if (age == null && user.identities != null) {
+        for (final id in user.identities!) {
+          age = _extractAgeFromMetadata(id.identityData);
+          if (age != null) break;
+        }
+      }
     }
 
-    // 2. If session has providerToken (OAuth access token), query Google People API
+    // 2. Query Google People API if session has providerToken and age was not in metadata
     final session = _client?.auth.currentSession;
     if (session?.providerToken != null && age == null) {
       age = await _fetchAgeFromGooglePeopleApi(session!.providerToken!);
     }
 
-    // 3. Fallback to existing profile age or previously cached age
-    age ??= _currentProfile?.age ?? prefs.getInt('baatkry_user_age');
-
-    // Default to 18 for authenticated adult Google accounts if Google doesn't share raw DOB
-    age ??= 18;
-
-    if (age < 18) {
-      // UNDERAGE: Block user immediately!
-      await prefs.setBool('baatkry_underage_blocked', true);
-      await prefs.setBool('baatkry_age_verified_18_plus', false);
-      if (_client != null) {
-        try {
-          await _client!.auth.signOut();
-        } catch (_) {}
+    // 3. If age was explicitly found from Google/Gmail:
+    if (age != null) {
+      if (age < 18) {
+        // UNDERAGE: Block user immediately!
+        await prefs.setBool('baatkry_underage_blocked', true);
+        await prefs.setBool('baatkry_age_verified_18_plus', false);
+        if (_client != null) {
+          try {
+            await _client!.auth.signOut();
+          } catch (_) {}
+        }
+        return GoogleAgeStatus.underageBlocked;
       }
-      return false; // Underage -> block!
+
+      // Eligible 18+
+      await prefs.setBool('baatkry_underage_blocked', false);
+      await prefs.setBool('baatkry_age_verified_18_plus', true);
+      await prefs.setInt('baatkry_user_age', age);
+      if (_currentProfile != null) {
+        _currentProfile = _currentProfile!.copyWith(age: age, isAgeVerified: true);
+        _profileController.add(_currentProfile);
+      }
+      return GoogleAgeStatus.verifiedAdult;
     }
 
-    // Eligible 18+
-    await prefs.setBool('baatkry_underage_blocked', false);
-    await prefs.setInt('baatkry_user_age', age);
-    if (_currentProfile != null) {
-      _currentProfile = _currentProfile!.copyWith(age: age, isAgeVerified: true);
-      _profileController.add(_currentProfile);
+    // 4. Age or DOB NOT found from Google/Gmail:
+    // Check if user previously verified age with birth certificate DOB picker
+    final previouslyVerified = prefs.getBool('baatkry_age_verified_18_plus') ?? false;
+    final savedAge = prefs.getInt('baatkry_user_age');
+    if (previouslyVerified && savedAge != null && savedAge >= 18) {
+      return GoogleAgeStatus.verifiedAdult;
     }
-    return true;
+
+    // Age / DOB not found from Gmail -> ask user to put their date of birth!
+    return GoogleAgeStatus.dobNotFound;
+  }
+
+  /// Backward-compatible helper returning true if user is eligible (not blocked as minor)
+  Future<bool> verifyGoogleUserEligibility() async {
+    final status = await checkGoogleUserAge();
+    return status != GoogleAgeStatus.underageBlocked;
   }
 
   Future<int?> _fetchAgeFromGooglePeopleApi(String token) async {
@@ -328,21 +374,22 @@ class SupabaseService {
           scopes: 'email profile openid https://www.googleapis.com/auth/user.birthday.read',
         );
         if (success) {
-          final isEligible = await verifyGoogleUserEligibility();
-          if (!isEligible) {
+          final ageStatus = await checkGoogleUserAge();
+          if (ageStatus == GoogleAgeStatus.underageBlocked) {
             throw Exception('Underage Access Denied: Your Google/Gmail account indicates you are under 18. Baatkry is strictly for adults 18+.');
           }
 
           final user = _client!.auth.currentUser;
           if (user != null) {
+            final isAdultVerified = (ageStatus == GoogleAgeStatus.verifiedAdult);
             final profile = await _fetchRemoteProfile(user.id) ??
                 UserProfile(
                   id: user.id,
                   isAnonymous: false,
                   nickname: user.userMetadata?['full_name'] ?? 'Google User',
                   coins: 120, // 120 coins initial signup bonus
-                  age: _currentProfile?.age ?? 18,
-                  isAgeVerified: true,
+                  age: isAdultVerified ? (_currentProfile?.age) : null,
+                  isAgeVerified: isAdultVerified,
                 );
             _currentProfile = profile;
             _profileController.add(_currentProfile);
