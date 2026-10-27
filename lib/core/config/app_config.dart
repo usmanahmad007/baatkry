@@ -1,28 +1,87 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 /// Configuration settings for Supabase and LiveKit.
-/// Replace placeholder values with your project credentials.
+/// Secrets (API keys, URLs, and Secrets) are loaded from the `.env` file at runtime
+/// with fallback support for `--dart-define` compilation flags.
 class AppConfig {
   AppConfig._();
 
-  // ---------------------------------------------------------------------------
-  // Supabase Credentials
-  // ---------------------------------------------------------------------------
-  static const String supabaseUrl = 'https://ahrsyiwgvkvosccwabpi.supabase.co';
-  static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocnN5aXdndmt2b3NjY3dhYnBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4MzM4NDEsImV4cCI6MjEwODQwOTg0MX0.6ZBeMjB8bxoQrLkc6VQff5LsSZ_GAaJDB6bd0O-OZ5I';
+  /// Initialize and load the `.env` asset file. Call this before [runApp] in `main()`.
+  static Future<void> init() async {
+    try {
+      await dotenv.load(fileName: '.env', isOptional: true);
+    } catch (e) {
+      debugPrint('[AppConfig] Note: .env could not be loaded from assets: $e');
+    }
+  }
+
+  /// Initialize with a custom in-memory environment string or map for testing.
+  static void initForTesting({
+    String? envString,
+    Map<String, String>? mergeWith,
+  }) {
+    dotenv.loadFromString(
+      envString: envString ?? '',
+      mergeWith: mergeWith ?? const {},
+      isOptional: true,
+    );
+  }
+
+  /// Helper to safely retrieve an environment variable from `.env` or `--dart-define`
+  static String _getEnv(String key, {String fallback = ''}) {
+    if (dotenv.isInitialized) {
+      final val = dotenv.maybeGet(key);
+      if (val != null && val.trim().isNotEmpty) {
+        return val.trim();
+      }
+    }
+
+    // Fallback to compile-time --dart-define flags
+    const dartDefines = {
+      'SUPABASE_URL': String.fromEnvironment('SUPABASE_URL'),
+      'SUPABASE_ANON_KEY': String.fromEnvironment('SUPABASE_ANON_KEY'),
+      'LIVEKIT_WS_URL': String.fromEnvironment('LIVEKIT_WS_URL'),
+      'LIVEKIT_API_KEY': String.fromEnvironment('LIVEKIT_API_KEY'),
+      'LIVEKIT_API_SECRET': String.fromEnvironment('LIVEKIT_API_SECRET'),
+      'APP_NAME': String.fromEnvironment('APP_NAME'),
+      'APP_TAGLINE': String.fromEnvironment('APP_TAGLINE'),
+    };
+
+    final defineVal = dartDefines[key];
+    if (defineVal != null && defineVal.trim().isNotEmpty) {
+      return defineVal.trim();
+    }
+
+    return fallback;
+  }
 
   // ---------------------------------------------------------------------------
-  // LiveKit RTC Credentials
+  // Supabase Credentials (Loaded dynamically from .env)
   // ---------------------------------------------------------------------------
-  static const String liveKitWsUrl = 'wss://strangerchat-bb4s4zbz.livekit.cloud';
-  static const String liveKitApiKey = 'API3Kweefp4W3hL';
-  static const String liveKitApiSecret = 'jee9ISk01mVimZIQKt1nSUMo3iHMpBDlQAkmzpdd4Do';
+  static String get supabaseUrl => _getEnv('SUPABASE_URL');
+  static String get supabaseAnonKey => _getEnv('SUPABASE_ANON_KEY');
 
-  // Both Supabase and LiveKit credentials are fully configured
-  static bool get isSupabaseConfigured => true;
-  static bool get isLiveKitConfigured => true;
+  // ---------------------------------------------------------------------------
+  // LiveKit RTC Credentials (Loaded dynamically from .env)
+  // ---------------------------------------------------------------------------
+  static String get liveKitWsUrl => _getEnv('LIVEKIT_WS_URL');
+  static String get liveKitApiKey => _getEnv('LIVEKIT_API_KEY');
+  static String get liveKitApiSecret => _getEnv('LIVEKIT_API_SECRET');
+
+  // Credentials verification
+  static bool get isSupabaseConfigured =>
+      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+  static bool get isLiveKitConfigured =>
+      liveKitWsUrl.isNotEmpty &&
+      liveKitApiKey.isNotEmpty &&
+      liveKitApiSecret.isNotEmpty;
 
   // App details
-  static const String appName = 'Baatkry';
-  static const String appTagline = 'Meet new people instantly over live video';
+  static String get appName => _getEnv('APP_NAME', fallback: 'Baatkry');
+  static String get appTagline =>
+      _getEnv('APP_TAGLINE', fallback: 'Meet new people instantly over live video');
 
   // Default interests for Monkey mode
   static const List<String> availableInterests = [
