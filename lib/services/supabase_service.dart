@@ -434,7 +434,7 @@ class SupabaseService {
       return await _client!.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: redirectUrl,
-        scopes: 'email profile openid https://www.googleapis.com/auth/user.birthday.read',
+        scopes: 'email profile openid',
         queryParams: {
           'prompt': 'select_account',
           'access_type': 'offline',

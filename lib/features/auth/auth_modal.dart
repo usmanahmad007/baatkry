@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/user_profile.dart';
 import '../../services/supabase_service.dart';
 import '../moderation/age_consent_modal.dart';
 
@@ -24,6 +26,25 @@ class AuthModal extends StatefulWidget {
 class _AuthModalState extends State<AuthModal> {
   bool _isLoading = false;
   String? _errorMessage;
+  StreamSubscription<UserProfile?>? _profileSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-dismiss modal when Google OAuth returns a signed-in profile
+    _profileSubscription = SupabaseService.instance.profileStream.listen((profile) {
+      if (profile != null && !profile.isAnonymous && mounted) {
+        Navigator.of(context).pop();
+        widget.onAuthSuccess?.call();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _profileSubscription?.cancel();
+    super.dispose();
+  }
 
   Future<void> _handleGoogleSignIn() async {
     final isBlocked = await AgeConsentModal.isBlockedUnderage();
@@ -35,231 +56,39 @@ class _AuthModalState extends State<AuthModal> {
       return;
     }
 
-    _showGoogleAccountSelectionDialog();
-  }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-  Future<void> _showGoogleAccountSelectionDialog() async {
-    final emailController = TextEditingController();
-    DateTime? selectedDob;
-    String? dialogError;
-    bool isSubmitting = false;
+    try {
+      final success = await SupabaseService.instance.signInWithGoogle();
 
-    await showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          return AlertDialog(
-            backgroundColor: AppColors.surfaceElevated,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-              side: const BorderSide(color: AppColors.brandIndigo, width: 1.5),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'G',
-                      style: TextStyle(
-                        color: Color(0xFF4285F4),
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Sign In with Google',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Please put or select your Gmail address to connect your Google account:',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    autofocus: true,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    decoration: InputDecoration(
-                      labelText: 'Your Gmail / Google Email',
-                      labelStyle: const TextStyle(color: AppColors.textSecondary),
-                      hintText: 'e.g. yourname@gmail.com',
-                      hintStyle: const TextStyle(color: Colors.white24),
-                      prefixIcon: const Icon(Icons.mail_outline_rounded, color: AppColors.brandIndigo),
-                      filled: true,
-                      fillColor: Colors.black26,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.surfaceBorder),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.brandIndigo, width: 2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime(2002, 1, 1),
-                        firstDate: DateTime(1930),
-                        lastDate: DateTime.now(),
-                      );
-                      if (picked != null) {
-                        setDialogState(() {
-                          selectedDob = picked;
-                          dialogError = null;
-                        });
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: selectedDob == null ? AppColors.surfaceBorder : AppColors.brandPink,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.cake_outlined, color: AppColors.brandPink, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              selectedDob == null
-                                  ? 'Select Date of Birth (Verify 18+)'
-                                  : 'DOB: ${selectedDob!.year}-${selectedDob!.month.toString().padLeft(2, '0')}-${selectedDob!.day.toString().padLeft(2, '0')}',
-                              style: TextStyle(
-                                color: selectedDob == null ? AppColors.textSecondary : Colors.white,
-                                fontSize: 13,
-                                fontWeight: selectedDob == null ? FontWeight.normal : FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const Icon(Icons.calendar_today_rounded, color: AppColors.textSecondary, size: 16),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (dialogError != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      dialogError!,
-                      style: const TextStyle(color: AppColors.danger, fontSize: 12),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
-              ),
-              ElevatedButton(
-                onPressed: isSubmitting
-                    ? null
-                    : () async {
-                        final email = emailController.text.trim();
-                        if (email.isEmpty || !email.contains('@')) {
-                          setDialogState(() => dialogError = 'Please enter your Google / Gmail address.');
-                          return;
-                        }
-                        if (!email.toLowerCase().endsWith('gmail.com') && !email.contains('.')) {
-                          setDialogState(() => dialogError = 'Please enter a valid Gmail address.');
-                          return;
-                        }
-                        if (selectedDob == null) {
-                          setDialogState(() => dialogError = 'Please select your Date of Birth to verify 18+.');
-                          return;
-                        }
+      if (!mounted) return;
 
-                        final now = DateTime.now();
-                        int age = now.year - selectedDob!.year;
-                        if (now.month < selectedDob!.month || (now.month == selectedDob!.month && now.day < selectedDob!.day)) {
-                          age--;
-                        }
-                        if (age < 18) {
-                          if (ctx.mounted) {
-                            Navigator.of(ctx).pop();
-                          }
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                            AgeConsentModal.showUnderageBlockedDialog(context);
-                          }
-                          return;
-                        }
-
-                        setDialogState(() => isSubmitting = true);
-                        try {
-                          await SupabaseService.instance.signInWithGmailDirect(
-                            email,
-                            dateOfBirth: selectedDob,
-                          );
-                          if (ctx.mounted) {
-                            Navigator.of(ctx).pop();
-                          }
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                            widget.onAuthSuccess?.call();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: AppColors.success,
-                                content: Text('Signed in as $email (Age $age verified 🎉)'),
-                              ),
-                            );
-                          }
-                        } catch (err) {
-                          setDialogState(() {
-                            isSubmitting = false;
-                            dialogError = err.toString().replaceAll('Exception: ', '');
-                          });
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.brandIndigo,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                child: isSubmitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Continue with Gmail', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+      if (success && SupabaseService.instance.isAuthenticated) {
+        Navigator.of(context).pop();
+        widget.onAuthSuccess?.call();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: AppColors.success,
+            content: Text('Signed in with Google!'),
+          ),
+        );
+      } else {
+        // If web OAuth redirect or browser popup was initiated, reset loading spinner
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _handleAnonymousSignIn() async {
