@@ -7,7 +7,6 @@ import 'package:livekit_client/livekit_client.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/theme/app_theme.dart';
-import '../../models/country.dart';
 import '../../models/user_profile.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
@@ -51,9 +50,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.initState();
     _profile = SupabaseService.instance.currentProfile;
     _myGender = _profile?.gender ?? 'unspecified';
-    _selectedCountry = _profile?.country ?? 'Global (Worldwide)';
-    _selectedCountryCode = _profile?.countryCode ?? 'ALL';
-    _selectedCountryFlag = AppCountry.fromCode(_selectedCountryCode).flag;
+    // By default, if the user has not selected any specific country, always select Worldwide
+    if (_selectedCountryCode == 'ALL' ||
+        _selectedCountry.toLowerCase().contains('global') ||
+        _selectedCountry.toLowerCase().contains('worldwide')) {
+      _selectedCountry = 'Global (Worldwide)';
+      _selectedCountryCode = 'ALL';
+      _selectedCountryFlag = '🌍';
+    }
 
     _livePulseController = AnimationController(
       vsync: this,
@@ -69,9 +73,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         setState(() {
           _profile = p;
           _myGender = p?.gender ?? 'unspecified';
-          _selectedCountry = p?.country ?? 'Global (Worldwide)';
-          _selectedCountryCode = p?.countryCode ?? 'ALL';
-          _selectedCountryFlag = AppCountry.fromCode(_selectedCountryCode).flag;
+          if (_selectedCountryCode == 'ALL') {
+            _selectedCountry = 'Global (Worldwide)';
+            _selectedCountryCode = 'ALL';
+            _selectedCountryFlag = '🌍';
+          }
         });
       }
     });
@@ -124,12 +130,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       setState(() => _selectedGenderFilter = 'everyone');
     }
 
+    final effectiveCountry = (_selectedCountryCode == 'ALL' ||
+            _selectedCountry.toLowerCase().contains('global') ||
+            _selectedCountry.toLowerCase().contains('worldwide'))
+        ? 'Global (Worldwide)'
+        : _selectedCountry;
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RadarScreen(
           profile: _profile ?? const UserProfile(id: 'temp_guest'),
           genderFilter: effectiveFilter,
-          countryFilter: _selectedCountry,
+          countryFilter: effectiveCountry,
         ),
       ),
     );

@@ -58,10 +58,28 @@ class MatchmakingService {
   final _statusController = StreamController<MatchmakingStatus>.broadcast();
   final _matchController = StreamController<MatchResult>.broadcast();
   Timer? _searchTimeoutTimer;
+  Timer? _periodicSyncTimer;
 
   MatchmakingStatus get status => _status;
   Stream<MatchmakingStatus> get statusStream => _statusController.stream;
   Stream<MatchResult> get matchStream => _matchController.stream;
+
+  /// Helper to test if a country selection is Worldwide / Global
+  static bool isWorldwide(String? filter) {
+    if (filter == null || filter.trim().isEmpty) return true;
+    final f = filter.toLowerCase().trim();
+    return f == 'all' || f.contains('global') || f.contains('worldwide');
+  }
+
+  /// Generates a deterministic, shared room ID between any two users so both
+  /// are guaranteed to enter the identical LiveKit room.
+  static String generateRoomId(String idA, String idB) {
+    final first = idA.compareTo(idB) < 0 ? idA : idB;
+    final second = idA.compareTo(idB) < 0 ? idB : idA;
+    final s1 = first.length > 8 ? first.substring(0, 8) : first;
+    final s2 = second.length > 8 ? second.substring(0, 8) : second;
+    return 'room_${s1}_$s2';
+  }
 
   /// Start searching for a real live match.
   Future<void> findMatch({
@@ -72,9 +90,8 @@ class MatchmakingService {
     _status = MatchmakingStatus.searching;
     _statusController.add(_status);
 
-    final isSpecificCountry = countryFilter.isNotEmpty &&
-        !countryFilter.toLowerCase().contains('global') &&
-        countryFilter != 'ALL';
+    final myIsWorldwide = isWorldwide(countryFilter);
+    final effectiveCountryFilter = myIsWorldwide ? 'Global (Worldwide)' : countryFilter;
 
     final client = SupabaseService.instance.client;
 
@@ -85,11 +102,13 @@ class MatchmakingService {
 
         _channel!
           ..onPresenceSync((_) {
-            _checkPresenceForMatch(myProfile, genderFilter, countryFilter);
+            _checkPresenceForMatch(myProfile, genderFilter, effectiveCountryFilter);
           })
           ..onBroadcast(
             event: 'match_event_${myProfile.id}',
             callback: (payload) async {
+              if (_status != MatchmakingStatus.searching) return;
+
               final roomId = payload['room_id'] as String;
               final peerId = payload['peer_id'] as String;
               final peerName = payload['peer_name'] as String;
@@ -129,14 +148,27 @@ class MatchmakingService {
               'country': myProfile.country,
               'country_flag': myProfile.countryCode == 'ALL' ? '🌍' : AppCountry.fromCode(myProfile.countryCode).flag,
               'gender_filter': genderFilter,
-              'country_filter': countryFilter,
+              'country_filter': effectiveCountryFilter,
+              'is_worldwide': myIsWorldwide,
+              'status': 'searching',
               'joined_at': DateTime.now().toIso8601String(),
             });
+
+            // Immediately check for any peer already waiting in the pool
+            _checkPresenceForMatch(myProfile, genderFilter, effectiveCountryFilter);
+          }
+        });
+
+        // Periodic sync scanner (runs every 1.5s while searching to guarantee fast matching across network boundaries)
+        _periodicSyncTimer?.cancel();
+        _periodicSyncTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+          if (_status == MatchmakingStatus.searching) {
+            _checkPresenceForMatch(myProfile, genderFilter, effectiveCountryFilter);
           }
         });
 
         _searchTimeoutTimer?.cancel();
-        if (isSpecificCountry) {
+        if (!myIsWorldwide) {
           _searchTimeoutTimer = Timer(countrySearchTimeout, () {
             if (_status == MatchmakingStatus.searching) {
               _status = MatchmakingStatus.noUsersInCountry;
@@ -153,13 +185,13 @@ class MatchmakingService {
         }
         return;
       } catch (e) {
-        debugPrint('[MatchmakingService] Realtime queue error: $e.');
+        debugPrint('[MatchmakingService] Realtime queue note: $e.');
       }
     }
 
     // Fallback: Realtime searching queue when server is offline or initializing
     _searchTimeoutTimer?.cancel();
-    if (isSpecificCountry) {
+    if (!myIsWorldwide) {
       _searchTimeoutTimer = Timer(countrySearchTimeout, () {
         if (_status == MatchmakingStatus.searching) {
           _status = MatchmakingStatus.noUsersInCountry;
@@ -181,35 +213,86 @@ class MatchmakingService {
 
     final presenceState = _channel!.presenceState();
     final List<Map<String, dynamic>> waitingPeers = [];
+    final myIsWorldwide = isWorldwide(countryFilter);
 
     for (final entry in presenceState) {
       final presences = entry.presences;
       for (final p in presences) {
         final payload = p.payload;
         final peerId = payload['user_id'] as String?;
+        if (peerId == null || peerId == myProfile.id) continue;
+
+        // Check if this peer already coordinated and matched with us via presence update
+        final matchedWith = payload['matched_with'] as String?;
+        final remoteRoomId = payload['room_id'] as String?;
+        if (matchedWith == myProfile.id && remoteRoomId != null) {
+          final peerName = payload['nickname'] as String? ?? 'Stranger';
+          final peerGender = payload['gender'] as String? ?? 'unspecified';
+          final peerCountry = payload['country'] as String? ?? 'Global (Worldwide)';
+          final peerCountryFlag = payload['country_flag'] as String? ?? '🌍';
+
+          final token = TokenService.createLiveKitToken(
+            roomName: remoteRoomId,
+            participantId: myProfile.id,
+            participantName: myProfile.nickname,
+          );
+
+          try {
+            await _channel?.untrack();
+          } catch (_) {}
+
+          _onMatchSuccess(MatchResult(
+            roomId: remoteRoomId,
+            token: token,
+            peerId: peerId,
+            peerName: peerName,
+            peerGender: peerGender,
+            peerCountry: peerCountry,
+            peerCountryFlag: peerCountryFlag,
+          ));
+          return;
+        }
+
         final peerGender = payload['gender'] as String? ?? 'unspecified';
         final peerFilter = payload['gender_filter'] as String? ?? 'everyone';
 
-        if (peerId != null && peerId != myProfile.id) {
-          // Check mutual filter compatibility
-          final myFilterSatisfied = genderFilter == 'everyone' || genderFilter == peerGender;
-          final peerFilterSatisfied = peerFilter == 'everyone' || peerFilter == myProfile.gender;
+        // Check gender compatibility
+        final myFilterSatisfied = genderFilter == 'everyone' || genderFilter.toLowerCase() == peerGender.toLowerCase();
+        final peerFilterSatisfied = peerFilter == 'everyone' || peerFilter.toLowerCase() == myProfile.gender.toLowerCase();
+        if (!myFilterSatisfied || !peerFilterSatisfied) continue;
 
-          final isSpecific = countryFilter.isNotEmpty &&
-              !countryFilter.toLowerCase().contains('global') &&
-              countryFilter != 'ALL';
-          final peerCountry = payload['country'] as String? ?? 'Global (Worldwide)';
-          final countrySatisfied = !isSpecific || peerCountry.toLowerCase() == countryFilter.toLowerCase();
+        // Check country compatibility
+        final peerCountry = payload['country'] as String? ?? 'Global (Worldwide)';
+        final peerCountryFilter = payload['country_filter'] as String? ?? 'Global (Worldwide)';
+        final peerIsWorldwide = isWorldwide(peerCountryFilter);
 
-          if (myFilterSatisfied && peerFilterSatisfied && countrySatisfied) {
-            waitingPeers.add(payload);
-          }
+        bool countrySatisfied = false;
+        if (myIsWorldwide && peerIsWorldwide) {
+          // If both users selected Worldwide: 100% Guaranteed Match!
+          countrySatisfied = true;
+        } else if (myIsWorldwide && !peerIsWorldwide) {
+          // I want anyone worldwide; peer wants specific country: check if my country matches peer's filter
+          final myCountry = myProfile.country.toLowerCase();
+          final peerReq = peerCountryFilter.toLowerCase();
+          countrySatisfied = myCountry.contains(peerReq) || peerReq.contains(myCountry);
+        } else if (!myIsWorldwide && peerIsWorldwide) {
+          // Peer wants anyone worldwide; I want specific country: check if peer's country matches my filter
+          final peerC = peerCountry.toLowerCase();
+          final myReq = countryFilter.toLowerCase();
+          countrySatisfied = peerC.contains(myReq) || myReq.contains(peerC);
+        } else {
+          // Both chose specific countries: check cross-match
+          countrySatisfied = peerCountry.toLowerCase().contains(countryFilter.toLowerCase()) &&
+              myProfile.country.toLowerCase().contains(peerCountryFilter.toLowerCase());
+        }
+
+        if (countrySatisfied) {
+          waitingPeers.add(payload);
         }
       }
     }
 
-    if (waitingPeers.isNotEmpty) {
-      // Pick active waiting peer
+    if (waitingPeers.isNotEmpty && _status == MatchmakingStatus.searching) {
       final peer = waitingPeers.first;
       final peerId = peer['user_id'] as String;
       final peerName = peer['nickname'] as String? ?? 'Stranger';
@@ -217,10 +300,12 @@ class MatchmakingService {
       final peerCountry = peer['country'] as String? ?? 'Global (Worldwide)';
       final peerCountryFlag = peer['country_flag'] as String? ?? '🌍';
 
-      // Deterministic coordinator to avoid race conditions
-      if (myProfile.id.compareTo(peerId) < 0) {
-        final roomId = 'room_${myProfile.id.substring(0, 4)}_${peerId.substring(0, 4)}_${DateTime.now().millisecondsSinceEpoch}';
+      // Deterministic shared room ID (both users calculate the exact same room ID)
+      final roomId = generateRoomId(myProfile.id, peerId);
 
+      // Coordinator check to prevent duplicate broadcasts
+      if (myProfile.id.compareTo(peerId) < 0) {
+        // Broadcast match event to the peer
         await _channel!.sendBroadcastMessage(
           event: 'match_event_$peerId',
           payload: {
@@ -233,7 +318,17 @@ class MatchmakingService {
           },
         );
 
-        // Immediately untrack coordinator from waiting pool
+        // Also update presence payload to announce the match
+        try {
+          await _channel?.track({
+            'user_id': myProfile.id,
+            'status': 'matched',
+            'matched_with': peerId,
+            'room_id': roomId,
+          });
+        } catch (_) {}
+
+        // Untrack coordinator from waiting pool
         try {
           await _channel?.untrack();
         } catch (_) {}
@@ -259,6 +354,7 @@ class MatchmakingService {
 
   void _onMatchSuccess(MatchResult result) {
     _searchTimeoutTimer?.cancel();
+    _periodicSyncTimer?.cancel();
     _status = MatchmakingStatus.matched;
     _statusController.add(_status);
     _matchController.add(result);
@@ -266,6 +362,7 @@ class MatchmakingService {
 
   Future<void> cancelSearch() async {
     _searchTimeoutTimer?.cancel();
+    _periodicSyncTimer?.cancel();
     _status = MatchmakingStatus.idle;
     _statusController.add(_status);
     try {
