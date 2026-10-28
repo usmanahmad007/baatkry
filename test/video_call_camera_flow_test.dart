@@ -298,5 +298,45 @@ void main() {
       await SupabaseService.instance.signInWithGoogle();
       expect(SupabaseService.instance.currentProfile?.coins, 110); // NOT reset to 120
     });
+
+    test('User who exhausted all 120 coins retains 0 coins upon re-login (no duplicate bonus)', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // 1. First-time user logs in with email
+      await SupabaseService.instance.signInWithGmailDirect('exhaust.user@gmail.com');
+      expect(SupabaseService.instance.currentProfile?.coins, 120);
+
+      // 2. User spends all 120 coins
+      await SupabaseService.instance.updateCoinsBalance(0);
+      expect(SupabaseService.instance.currentProfile?.coins, 0);
+
+      // 3. User logs out
+      await SupabaseService.instance.signOut();
+      expect(SupabaseService.instance.isGuest, isTrue);
+      expect(SupabaseService.instance.currentProfile?.coins, 0);
+
+      // 4. User logs back in — must NOT receive 120 coins again, must retain 0 coins
+      await SupabaseService.instance.signInWithGmailDirect('exhaust.user@gmail.com');
+      expect(SupabaseService.instance.currentProfile?.coins, 0);
+    });
+
+    test('Second account created on same device cannot claim duplicate 120 starter coins', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // 1. First user signs in on this device and claims 120 bonus
+      await SupabaseService.instance.signInWithGmailDirect('first.device.user@gmail.com');
+      expect(SupabaseService.instance.currentProfile?.coins, 120);
+
+      // 2. First user signs out
+      await SupabaseService.instance.signOut();
+      expect(SupabaseService.instance.isGuest, isTrue);
+
+      // 3. Second user tries to sign in on the exact same device
+      await SupabaseService.instance.signInWithGmailDirect('second.device.user@gmail.com');
+      // Because this device already claimed the starter bonus, second account gets 0 coins
+      expect(SupabaseService.instance.currentProfile?.coins, 0);
+    });
   });
 }

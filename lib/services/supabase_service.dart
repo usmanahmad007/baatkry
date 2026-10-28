@@ -64,15 +64,50 @@ class SupabaseService {
             if (session?.user != null) {
               final user = session!.user;
               final detectedAge = _extractAgeFromMetadata(user.userMetadata);
-              final profile = await _fetchRemoteProfile(user.id) ??
-                  UserProfile(
-                    id: user.id,
-                    isAnonymous: false,
-                    nickname: user.userMetadata?['full_name'] ?? user.email?.split('@').first ?? 'Google User',
-                    coins: 120, // 120 coins initial signup bonus
-                    age: detectedAge,
-                    isAgeVerified: detectedAge != null && detectedAge >= 18,
-                  );
+              final prefs = await SharedPreferences.getInstance();
+              final hasUsedBonusOnDevice = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
+              final cleanEmail = user.email?.trim().toLowerCase();
+              final hasClaimedBonusForEmail = cleanEmail != null && (prefs.getBool('baatkry_bonus_claimed_$cleanEmail') ?? false);
+              final hasClaimedBonusForUser = prefs.getBool('baatkry_bonus_claimed_${user.id}') ?? false;
+              final savedUserCoins = prefs.getInt('local_user_coins_${user.id}') ?? prefs.getInt('local_user_coins');
+
+              final remoteProfile = await _fetchRemoteProfile(user.id);
+              UserProfile profile;
+              if (remoteProfile != null) {
+                profile = remoteProfile;
+                await prefs.setInt('local_user_coins_${user.id}', profile.coins);
+                await prefs.setInt('local_user_coins', profile.coins);
+              } else {
+                final isFirstTimeUser = !hasUsedBonusOnDevice &&
+                    !hasClaimedBonusForEmail &&
+                    !hasClaimedBonusForUser &&
+                    savedUserCoins == null;
+                final initialCoins = isFirstTimeUser ? 120 : (savedUserCoins ?? 0);
+
+                profile = UserProfile(
+                  id: user.id,
+                  isAnonymous: false,
+                  nickname: user.userMetadata?['full_name'] ?? user.email?.split('@').first ?? 'Google User',
+                  coins: initialCoins,
+                  age: detectedAge,
+                  isAgeVerified: detectedAge != null && detectedAge >= 18,
+                );
+
+                if (isFirstTimeUser) {
+                  await prefs.setBool('baatkry_bonus_used_on_device', true);
+                  _hasUsedJoiningBonus = true;
+                }
+                await prefs.setBool('baatkry_bonus_claimed_${user.id}', true);
+                if (cleanEmail != null) {
+                  await prefs.setBool('baatkry_bonus_claimed_$cleanEmail', true);
+                }
+                await prefs.setInt('local_user_coins_${user.id}', initialCoins);
+                await prefs.setInt('local_user_coins', initialCoins);
+
+                try {
+                  await _client!.from('profiles').upsert(profile.toMap());
+                } catch (_) {}
+              }
               _currentProfile = profile;
               _profileController.add(_currentProfile);
             }
@@ -110,12 +145,20 @@ class SupabaseService {
 
     if (_client != null && _client!.auth.currentUser != null) {
       final user = _client!.auth.currentUser!;
-      final profile = await _fetchRemoteProfile(user.id) ??
+      final remote = await _fetchRemoteProfile(user.id);
+      final cleanEmail = user.email?.trim().toLowerCase();
+      final hasClaimedBonus = (prefs.getBool('baatkry_bonus_claimed_${user.id}') ?? false) ||
+          (cleanEmail != null && (prefs.getBool('baatkry_bonus_claimed_$cleanEmail') ?? false));
+      final savedUserCoins = prefs.getInt('local_user_coins_${user.id}') ?? prefs.getInt('local_user_coins');
+
+      final profile = remote ??
           UserProfile(
             id: user.id,
             isAnonymous: user.isAnonymous,
             nickname: user.isAnonymous ? 'Guest #${user.id.substring(0, 4)}' : (user.email?.split('@').first ?? 'User'),
-            coins: user.isAnonymous ? 0 : (_hasUsedJoiningBonus ? (prefs.getInt('local_user_coins') ?? 0) : 120),
+            coins: user.isAnonymous
+                ? 0
+                : ((hasClaimedBonus || _hasUsedJoiningBonus) ? (savedUserCoins ?? 0) : 120),
           );
       _currentProfile = profile;
       _profileController.add(_currentProfile);
@@ -170,7 +213,7 @@ class SupabaseService {
             id: res.user!.id,
             isAnonymous: true,
             nickname: 'Guest #${res.user!.id.substring(0, 5)}',
-            coins: 120, // 120 starter coins
+            coins: 0, // Guest users have 0 coins before login/signup
           );
           _currentProfile = profile;
           _profileController.add(profile);
@@ -429,12 +472,32 @@ class SupabaseService {
       }
     }
 
-    final hasUsedBonus = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
-    final existingCoins = prefs.getInt('local_user_coins');
-    final initialCoins = hasUsedBonus ? (existingCoins ?? 0) : (existingCoins ?? 120);
-
     final nickname = cleanEmail.split('@').first;
     final userId = 'google_${cleanEmail.hashCode.abs()}';
+
+    final hasUsedBonusOnDevice = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
+    final hasClaimedBonusForEmail = prefs.getBool('baatkry_bonus_claimed_$cleanEmail') ?? false;
+    final hasClaimedBonusForUser = prefs.getBool('baatkry_bonus_claimed_$userId') ?? false;
+    final savedUserCoins = prefs.getInt('local_user_coins_$userId');
+
+    // ONLY first-time user gets 120 coins:
+    // If the device has already claimed the joining bonus, OR this email has claimed it,
+    // OR this user has claimed it, OR there is a previously saved coin balance for this user,
+    // they do NOT receive another 120 coins. They receive their saved balance (or 0).
+    final isFirstTimeUser = !hasUsedBonusOnDevice &&
+        !hasClaimedBonusForEmail &&
+        !hasClaimedBonusForUser &&
+        savedUserCoins == null;
+
+    final initialCoins = isFirstTimeUser ? 120 : (savedUserCoins ?? 0);
+
+    // Record bonus claim and persistence
+    if (isFirstTimeUser) {
+      await prefs.setBool('baatkry_bonus_used_on_device', true);
+      _hasUsedJoiningBonus = true;
+    }
+    await prefs.setBool('baatkry_bonus_claimed_$cleanEmail', true);
+    await prefs.setBool('baatkry_bonus_claimed_$userId', true);
 
     final profile = UserProfile(
       id: userId,
@@ -453,6 +516,7 @@ class SupabaseService {
     await prefs.setString('local_user_email', cleanEmail);
     await prefs.setBool('baatkry_age_verified_18_plus', true);
     await prefs.setInt('local_user_age', calculatedAge);
+    await prefs.setInt('local_user_coins_$userId', initialCoins);
     await prefs.setInt('local_user_coins', initialCoins);
 
     _currentProfile = profile;
@@ -467,6 +531,13 @@ class SupabaseService {
     required String password,
     required String nickname,
   }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    final prefs = await SharedPreferences.getInstance();
+    final hasUsedBonusOnDevice = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
+    final hasClaimedBonusForEmail = prefs.getBool('baatkry_bonus_claimed_$cleanEmail') ?? false;
+    final isFirstTimeUser = !hasUsedBonusOnDevice && !hasClaimedBonusForEmail;
+    final initialCoins = isFirstTimeUser ? 120 : 0;
+
     if (_client != null) {
       try {
         final res = await _client!.auth.signUp(
@@ -479,8 +550,17 @@ class SupabaseService {
             id: res.user!.id,
             isAnonymous: false,
             nickname: nickname,
-            coins: 120, // 120 bonus starter coins for registering
+            coins: initialCoins,
           );
+          if (isFirstTimeUser) {
+            await prefs.setBool('baatkry_bonus_used_on_device', true);
+            _hasUsedJoiningBonus = true;
+          }
+          await prefs.setBool('baatkry_bonus_claimed_${res.user!.id}', true);
+          await prefs.setBool('baatkry_bonus_claimed_$cleanEmail', true);
+          await prefs.setInt('local_user_coins_${res.user!.id}', initialCoins);
+          await prefs.setInt('local_user_coins', initialCoins);
+
           await _client!.from('profiles').upsert(profile.toMap());
           _currentProfile = profile;
           _profileController.add(_currentProfile);
@@ -493,26 +573,25 @@ class SupabaseService {
     }
 
     // Local simulation fallback
-    final prefs = await SharedPreferences.getInstance();
-    final hasUsedBonus = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
-    final initialCoins = hasUsedBonus ? (prefs.getInt('local_user_coins') ?? 0) : 120;
-
-    final profile = _currentProfile?.copyWith(
-          isAnonymous: false,
-          nickname: nickname,
-          coins: (_currentProfile?.coins != null && _currentProfile!.coins > 0)
-              ? _currentProfile!.coins
-              : initialCoins,
-        ) ??
-        UserProfile(
-          id: const Uuid().v4(),
-          isAnonymous: false,
-          nickname: nickname,
-          coins: initialCoins,
-        );
-
+    final userId = 'email_${cleanEmail.hashCode.abs()}';
+    if (isFirstTimeUser) {
+      await prefs.setBool('baatkry_bonus_used_on_device', true);
+      _hasUsedJoiningBonus = true;
+    }
+    await prefs.setBool('baatkry_bonus_claimed_$userId', true);
+    await prefs.setBool('baatkry_bonus_claimed_$cleanEmail', true);
+    await prefs.setString('local_user_id', userId);
     await prefs.setString('local_user_nickname', nickname);
-    await prefs.setInt('local_user_coins', profile.coins);
+    await prefs.setString('local_user_email', cleanEmail);
+    await prefs.setInt('local_user_coins_$userId', initialCoins);
+    await prefs.setInt('local_user_coins', initialCoins);
+
+    final profile = UserProfile(
+      id: userId,
+      isAnonymous: false,
+      nickname: nickname,
+      coins: initialCoins,
+    );
 
     _currentProfile = profile;
     _profileController.add(_currentProfile);
@@ -524,17 +603,24 @@ class SupabaseService {
     required String email,
     required String password,
   }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    final prefs = await SharedPreferences.getInstance();
+
     if (_client != null) {
       try {
         final res = await _client!.auth.signInWithPassword(email: email, password: password);
         if (res.user != null) {
-          final profile = await _fetchRemoteProfile(res.user!.id) ??
+          final remoteProfile = await _fetchRemoteProfile(res.user!.id);
+          final savedCoins = prefs.getInt('local_user_coins_${res.user!.id}') ?? prefs.getInt('local_user_coins');
+          final profile = remoteProfile ??
               UserProfile(
                 id: res.user!.id,
                 isAnonymous: false,
-                nickname: email.split('@').first,
-                coins: 120,
+                nickname: cleanEmail.split('@').first,
+                coins: savedCoins ?? 0, // Returning user logging in keeps their saved coins (never a new 120)
               );
+          await prefs.setInt('local_user_coins_${res.user!.id}', profile.coins);
+          await prefs.setInt('local_user_coins', profile.coins);
           _currentProfile = profile;
           _profileController.add(_currentProfile);
           return true;
@@ -547,23 +633,24 @@ class SupabaseService {
 
     // Local simulation fallback
     final nickname = email.split('@').first;
-    final prefs = await SharedPreferences.getInstance();
-    final hasUsedBonus = prefs.getBool('baatkry_bonus_used_on_device') ?? false;
-    final initialCoins = hasUsedBonus ? (prefs.getInt('local_user_coins') ?? 0) : 120;
+    final userId = 'email_${cleanEmail.hashCode.abs()}';
+    final savedCoins = prefs.getInt('local_user_coins_$userId') ?? prefs.getInt('local_user_coins');
+    final coins = savedCoins ?? 0;
 
-    _currentProfile = _currentProfile?.copyWith(
-          isAnonymous: false,
-          nickname: nickname,
-          coins: (_currentProfile?.coins != null && _currentProfile!.coins > 0)
-              ? _currentProfile!.coins
-              : initialCoins,
-        ) ??
-        UserProfile(
-          id: const Uuid().v4(),
-          isAnonymous: false,
-          nickname: nickname,
-          coins: initialCoins,
-        );
+    final profile = UserProfile(
+      id: userId,
+      isAnonymous: false,
+      nickname: nickname,
+      coins: coins,
+    );
+
+    await prefs.setString('local_user_id', userId);
+    await prefs.setString('local_user_nickname', nickname);
+    await prefs.setString('local_user_email', cleanEmail);
+    await prefs.setInt('local_user_coins_$userId', coins);
+    await prefs.setInt('local_user_coins', coins);
+
+    _currentProfile = profile;
     _profileController.add(_currentProfile);
     return true;
   }
@@ -660,6 +747,7 @@ class SupabaseService {
     }
 
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('local_user_coins_${_currentProfile!.id}', _currentProfile!.coins);
     await prefs.setInt('local_user_coins', _currentProfile!.coins);
     await prefs.setBool('local_user_is_vip', _currentProfile!.isVip);
 
@@ -690,6 +778,7 @@ class SupabaseService {
     }
 
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('local_user_coins_${_currentProfile!.id}', validBalance);
     await prefs.setInt('local_user_coins', validBalance);
 
     return true;
