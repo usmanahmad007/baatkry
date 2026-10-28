@@ -157,6 +157,22 @@ class LiveKitService {
           _remoteTrackController.add(_remoteVideoTrack);
         }
       })
+      ..on<TrackPublishedEvent>((event) {
+        if (event.publication.track is VideoTrack) {
+          _remoteVideoTrack = event.publication.track as VideoTrack;
+          _remoteTrackController.add(_remoteVideoTrack);
+        }
+      })
+      ..on<ParticipantConnectedEvent>((event) {
+        debugPrint('[LiveKitService] Remote participant connected: ${event.participant.identity}');
+        for (final pub in event.participant.videoTrackPublications) {
+          if (pub.track != null && pub.track is VideoTrack) {
+            _remoteVideoTrack = pub.track as VideoTrack;
+            _remoteTrackController.add(_remoteVideoTrack);
+            break;
+          }
+        }
+      })
       ..on<TrackUnsubscribedEvent>((event) {
         if (event.track is VideoTrack) {
           _remoteVideoTrack = null;

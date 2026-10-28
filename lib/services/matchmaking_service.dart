@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
 import '../models/country.dart';
@@ -54,6 +55,7 @@ class MatchmakingService {
   static Duration globalSearchTimeout = const Duration(seconds: 45);
 
   RealtimeChannel? _channel;
+  String? _currentSessionId;
   MatchmakingStatus _status = MatchmakingStatus.idle;
   final _statusController = StreamController<MatchmakingStatus>.broadcast();
   final _matchController = StreamController<MatchResult>.broadcast();
@@ -63,6 +65,7 @@ class MatchmakingService {
   MatchmakingStatus get status => _status;
   Stream<MatchmakingStatus> get statusStream => _statusController.stream;
   Stream<MatchResult> get matchStream => _matchController.stream;
+  String? get currentSessionId => _currentSessionId;
 
   /// Helper to test if a country selection is Worldwide / Global
   static bool isWorldwide(String? filter) {
@@ -71,7 +74,7 @@ class MatchmakingService {
     return f == 'all' || f.contains('global') || f.contains('worldwide');
   }
 
-  /// Generates a deterministic, shared room ID between any two users so both
+  /// Generates a deterministic, shared room ID between any two participants so both
   /// are guaranteed to enter the identical LiveKit room.
   static String generateRoomId(String idA, String idB) {
     final first = idA.compareTo(idB) < 0 ? idA : idB;
@@ -81,7 +84,8 @@ class MatchmakingService {
     return 'room_${s1}_$s2';
   }
 
-  /// Start searching for a real live match.
+  /// Start searching for a real live match across any device (Web, Android, iOS),
+  /// supporting registered users and non-registered guests alike.
   Future<void> findMatch({
     required UserProfile myProfile,
     String genderFilter = 'everyone',
@@ -93,43 +97,61 @@ class MatchmakingService {
     final myIsWorldwide = isWorldwide(countryFilter);
     final effectiveCountryFilter = myIsWorldwide ? 'Global (Worldwide)' : countryFilter;
 
+    // Generate unique participant session ID for this search session
+    // Guarantees independent presence state even if multiple devices are logged into the same account!
+    final clientSessionId = 'sess_${const Uuid().v4().replaceAll('-', '').substring(0, 16)}';
+    _currentSessionId = clientSessionId;
+
     final client = SupabaseService.instance.client;
 
     if (client != null && AppConfig.isSupabaseConfigured) {
       try {
-        await _channel?.unsubscribe();
-        _channel = client.channel('monkey_matchmaking_pool');
+        if (_channel != null) {
+          final old = _channel;
+          _channel = null;
+          try {
+            await old?.untrack();
+            await client.removeChannel(old!);
+          } catch (_) {}
+        }
+
+        // Use clientSessionId as the unique presence key
+        _channel = client.channel(
+          'monkey_matchmaking_pool',
+          opts: RealtimeChannelConfig(
+            key: clientSessionId,
+          ),
+        );
 
         _channel!
           ..onPresenceSync((_) {
             _checkPresenceForMatch(myProfile, genderFilter, effectiveCountryFilter);
           })
           ..onBroadcast(
-            event: 'match_event_${myProfile.id}',
+            event: 'match_event_$clientSessionId',
             callback: (payload) async {
               if (_status != MatchmakingStatus.searching) return;
 
               final roomId = payload['room_id'] as String;
-              final peerId = payload['peer_id'] as String;
-              final peerName = payload['peer_name'] as String;
+              final peerSessionId = payload['peer_session_id'] as String? ?? '';
+              final peerUserId = payload['peer_id'] as String? ?? peerSessionId;
+              final peerName = payload['peer_name'] as String? ?? 'Stranger';
               final peerGender = payload['peer_gender'] as String? ?? 'unspecified';
               final peerCountry = payload['peer_country'] as String? ?? 'Global (Worldwide)';
               final peerCountryFlag = payload['peer_country_flag'] as String? ?? '🌍';
+
+              // Unique participant ID per device so LiveKit never experiences identity conflicts
+              final myParticipantId = '${myProfile.id}_${clientSessionId.substring(5, 13)}';
               final token = TokenService.createLiveKitToken(
                 roomName: roomId,
-                participantId: myProfile.id,
+                participantId: myParticipantId,
                 participantName: myProfile.nickname,
               );
-
-              // Immediately remove from waiting presence pool once paired
-              try {
-                await _channel?.untrack();
-              } catch (_) {}
 
               _onMatchSuccess(MatchResult(
                 roomId: roomId,
                 token: token,
-                peerId: peerId,
+                peerId: peerUserId,
                 peerName: peerName,
                 peerGender: peerGender,
                 peerCountry: peerCountry,
@@ -141,8 +163,10 @@ class MatchmakingService {
         _channel!.subscribe((status, [error]) async {
           if (status == RealtimeSubscribeStatus.subscribed) {
             await _channel!.track({
+              'session_id': clientSessionId,
               'user_id': myProfile.id,
               'nickname': myProfile.nickname,
+              'is_anonymous': myProfile.isAnonymous,
               'gender': myProfile.gender,
               'interests': myProfile.interests,
               'country': myProfile.country,
@@ -151,6 +175,8 @@ class MatchmakingService {
               'country_filter': effectiveCountryFilter,
               'is_worldwide': myIsWorldwide,
               'status': 'searching',
+              'matched_session_id': '',
+              'room_id': '',
               'joined_at': DateTime.now().toIso8601String(),
             });
 
@@ -159,9 +185,9 @@ class MatchmakingService {
           }
         });
 
-        // Periodic sync scanner (runs every 1.5s while searching to guarantee fast matching across network boundaries)
+        // Periodic sync scanner (runs every 1000ms while searching for instant cross-device detection)
         _periodicSyncTimer?.cancel();
-        _periodicSyncTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+        _periodicSyncTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
           if (_status == MatchmakingStatus.searching) {
             _checkPresenceForMatch(myProfile, genderFilter, effectiveCountryFilter);
           }
@@ -209,7 +235,8 @@ class MatchmakingService {
   }
 
   void _checkPresenceForMatch(UserProfile myProfile, String genderFilter, [String countryFilter = 'Global (Worldwide)']) async {
-    if (_channel == null || _status != MatchmakingStatus.searching) return;
+    final currentSession = _currentSessionId;
+    if (_channel == null || _status != MatchmakingStatus.searching || currentSession == null) return;
 
     final presenceState = _channel!.presenceState();
     final List<Map<String, dynamic>> waitingPeers = [];
@@ -219,32 +246,31 @@ class MatchmakingService {
       final presences = entry.presences;
       for (final p in presences) {
         final payload = p.payload;
-        final peerId = payload['user_id'] as String?;
-        if (peerId == null || peerId == myProfile.id) continue;
+        final peerSessionId = payload['session_id'] as String?;
+        // Ignore self session (same device instance)
+        if (peerSessionId == null || peerSessionId == currentSession) continue;
 
-        // Check if this peer already coordinated and matched with us via presence update
-        final matchedWith = payload['matched_with'] as String?;
+        // 1. Check if this peer already coordinated and matched with us via presence update
+        final matchedSession = payload['matched_session_id'] as String?;
         final remoteRoomId = payload['room_id'] as String?;
-        if (matchedWith == myProfile.id && remoteRoomId != null) {
+        if (matchedSession == currentSession && remoteRoomId != null && remoteRoomId.isNotEmpty) {
           final peerName = payload['nickname'] as String? ?? 'Stranger';
           final peerGender = payload['gender'] as String? ?? 'unspecified';
           final peerCountry = payload['country'] as String? ?? 'Global (Worldwide)';
           final peerCountryFlag = payload['country_flag'] as String? ?? '🌍';
+          final peerUserId = payload['user_id'] as String? ?? peerSessionId;
 
+          final myParticipantId = '${myProfile.id}_${currentSession.substring(5, 13)}';
           final token = TokenService.createLiveKitToken(
             roomName: remoteRoomId,
-            participantId: myProfile.id,
+            participantId: myParticipantId,
             participantName: myProfile.nickname,
           );
-
-          try {
-            await _channel?.untrack();
-          } catch (_) {}
 
           _onMatchSuccess(MatchResult(
             roomId: remoteRoomId,
             token: token,
-            peerId: peerId,
+            peerId: peerUserId,
             peerName: peerName,
             peerGender: peerGender,
             peerCountry: peerCountry,
@@ -253,15 +279,21 @@ class MatchmakingService {
           return;
         }
 
-        final peerGender = payload['gender'] as String? ?? 'unspecified';
-        final peerFilter = payload['gender_filter'] as String? ?? 'everyone';
+        // 2. Ignore peers that are already matched with someone else
+        final peerStatus = payload['status'] as String? ?? 'searching';
+        if (peerStatus != 'searching') continue;
 
-        // Check gender compatibility
-        final myFilterSatisfied = genderFilter == 'everyone' || genderFilter.toLowerCase() == peerGender.toLowerCase();
-        final peerFilterSatisfied = peerFilter == 'everyone' || peerFilter.toLowerCase() == myProfile.gender.toLowerCase();
+        // 3. Gender compatibility check (both registered and non-registered guests)
+        final peerGender = payload['gender'] as String? ?? 'unspecified';
+        final peerFilter = (payload['gender_filter'] as String? ?? 'everyone').toLowerCase();
+        final myFilter = genderFilter.toLowerCase();
+        final myGender = myProfile.gender.toLowerCase();
+
+        final myFilterSatisfied = myFilter == 'everyone' || myFilter == peerGender.toLowerCase();
+        final peerFilterSatisfied = peerFilter == 'everyone' || peerFilter == myGender;
         if (!myFilterSatisfied || !peerFilterSatisfied) continue;
 
-        // Check country compatibility
+        // 4. Country compatibility check (Worldwide matches any user, specific country matches requested country)
         final peerCountry = payload['country'] as String? ?? 'Global (Worldwide)';
         final peerCountryFilter = payload['country_filter'] as String? ?? 'Global (Worldwide)';
         final peerIsWorldwide = isWorldwide(peerCountryFilter);
@@ -294,22 +326,24 @@ class MatchmakingService {
 
     if (waitingPeers.isNotEmpty && _status == MatchmakingStatus.searching) {
       final peer = waitingPeers.first;
-      final peerId = peer['user_id'] as String;
+      final peerSessionId = peer['session_id'] as String;
+      final peerUserId = peer['user_id'] as String? ?? peerSessionId;
       final peerName = peer['nickname'] as String? ?? 'Stranger';
       final peerGender = peer['gender'] as String? ?? 'unspecified';
       final peerCountry = peer['country'] as String? ?? 'Global (Worldwide)';
       final peerCountryFlag = peer['country_flag'] as String? ?? '🌍';
 
-      // Deterministic shared room ID (both users calculate the exact same room ID)
-      final roomId = generateRoomId(myProfile.id, peerId);
+      // Deterministic shared room ID based on unique session IDs
+      final roomId = generateRoomId(currentSession, peerSessionId);
 
-      // Coordinator check to prevent duplicate broadcasts
-      if (myProfile.id.compareTo(peerId) < 0) {
-        // Broadcast match event to the peer
+      // Coordinator check: the session with smaller alphabetical ID coordinates
+      if (currentSession.compareTo(peerSessionId) < 0) {
+        // 1. Broadcast match event to the peer
         await _channel!.sendBroadcastMessage(
-          event: 'match_event_$peerId',
+          event: 'match_event_$peerSessionId',
           payload: {
             'room_id': roomId,
+            'peer_session_id': currentSession,
             'peer_id': myProfile.id,
             'peer_name': myProfile.nickname,
             'peer_gender': myProfile.gender,
@@ -318,31 +352,30 @@ class MatchmakingService {
           },
         );
 
-        // Also update presence payload to announce the match
+        // 2. Also update presence payload to announce the match so peer can sync if broadcast was missed
         try {
           await _channel?.track({
+            'session_id': currentSession,
             'user_id': myProfile.id,
+            'nickname': myProfile.nickname,
             'status': 'matched',
-            'matched_with': peerId,
+            'matched_session_id': peerSessionId,
             'room_id': roomId,
+            'timestamp': DateTime.now().millisecondsSinceEpoch,
           });
         } catch (_) {}
 
-        // Untrack coordinator from waiting pool
-        try {
-          await _channel?.untrack();
-        } catch (_) {}
-
+        final myParticipantId = '${myProfile.id}_${currentSession.substring(5, 13)}';
         final myToken = TokenService.createLiveKitToken(
           roomName: roomId,
-          participantId: myProfile.id,
+          participantId: myParticipantId,
           participantName: myProfile.nickname,
         );
 
         _onMatchSuccess(MatchResult(
           roomId: roomId,
           token: myToken,
-          peerId: peerId,
+          peerId: peerUserId,
           peerName: peerName,
           peerGender: peerGender,
           peerCountry: peerCountry,
@@ -358,6 +391,14 @@ class MatchmakingService {
     _status = MatchmakingStatus.matched;
     _statusController.add(_status);
     _matchController.add(result);
+
+    // Give remote peer 2 seconds to read presence state before leaving channel
+    final ch = _channel;
+    Timer(const Duration(seconds: 2), () async {
+      try {
+        await ch?.untrack();
+      } catch (_) {}
+    });
   }
 
   Future<void> cancelSearch() async {
@@ -365,10 +406,19 @@ class MatchmakingService {
     _periodicSyncTimer?.cancel();
     _status = MatchmakingStatus.idle;
     _statusController.add(_status);
-    try {
-      await _channel?.untrack();
-      await _channel?.unsubscribe();
-      _channel = null;
-    } catch (_) {}
+    final ch = _channel;
+    _channel = null;
+    _currentSessionId = null;
+    if (ch != null) {
+      try {
+        await ch.untrack();
+        final client = SupabaseService.instance.client;
+        if (client != null) {
+          await client.removeChannel(ch);
+        } else {
+          await ch.unsubscribe();
+        }
+      } catch (_) {}
+    }
   }
 }
