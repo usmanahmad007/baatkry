@@ -11,6 +11,7 @@ import '../../models/country.dart';
 import '../../models/user_profile.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
+import '../../services/presence_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
 import '../matchmaking/radar_screen.dart';
@@ -41,11 +42,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   StreamSubscription<UserProfile?>? _profileSub;
   UserProfile? _profile;
 
-  // Live online users counter simulation for start screen display
+  // Real-time live online users counter for start screen display
   late AnimationController _livePulseController;
-  final int _baseLiveUsers = 48920;
-  int _liveUsersJitter = 0;
-  final math.Random _random = math.Random();
+  StreamSubscription<int>? _presenceSub;
 
   @override
   void initState() {
@@ -61,12 +60,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       duration: const Duration(seconds: 3),
     )..repeat();
 
-    _livePulseController.addStatusListener((status) {
-      if (status == AnimationStatus.forward && mounted) {
-        setState(() {
-          _liveUsersJitter = _random.nextInt(37) - 18;
-        });
-      }
+    _presenceSub = PresenceService.instance.liveUsersCountStream.listen((_) {
+      if (mounted) setState(() {});
     });
 
     _profileSub = SupabaseService.instance.profileStream.listen((p) {
@@ -93,12 +88,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _profileSub?.cancel();
+    _presenceSub?.cancel();
     _livePulseController.dispose();
     LiveKitService.instance.stopLocalPreview();
     super.dispose();
   }
 
-  int get totalLiveUsersCount => _baseLiveUsers + _liveUsersJitter;
+  int get totalLiveUsersCount => PresenceService.instance.totalLiveUsersCount;
 
   void _onStartMatching() {
     // 1. Consent & Verification Gate: Prompt user to verify 18+ and grant camera & mic
@@ -811,7 +807,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${totalLiveUsersCount.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} Live Users Online Worldwide',
+                  totalLiveUsersCount == 1
+                      ? '1 Live User Online Worldwide'
+                      : '${totalLiveUsersCount.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} Live Users Online Worldwide',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,

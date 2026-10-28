@@ -866,6 +866,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       if (!mounted) return;
       if (status == MatchmakingStatus.noUsersInCountry && _isSearchingNext) {
         _showNoUsersInCountryDialog();
+      } else if (status == MatchmakingStatus.noUsersOnline && _isSearchingNext) {
+        _showNoUsersOnlineDialog();
       }
     });
 
@@ -993,6 +995,108 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                 style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNoUsersOnlineDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfElevated(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.brandPink.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.people_outline_rounded, color: AppColors.brandPink, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Live Users Busy',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Currently all other live users online are chatting with someone. We only connect you with authentic live users (no bots or fake profiles).',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: AppColors.txtPrimary(context),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.brandIndigo.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.brandIndigo.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.radar_rounded, color: AppColors.brandIndigo, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Keep waiting to connect automatically as soon as the next live user finishes their chat or joins!',
+                      style: TextStyle(fontSize: 12, color: AppColors.txtSecondary(context)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).pop();
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    side: BorderSide(color: AppColors.border(context)),
+                  ),
+                  child: const Text('Exit Call', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    _onSkipToNext();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brandIndigo,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Keep Waiting', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ),
         ],
       ),

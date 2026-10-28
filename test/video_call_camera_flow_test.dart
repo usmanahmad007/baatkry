@@ -209,6 +209,39 @@ void main() {
       MatchmakingService.countrySearchTimeout = originalTimeout;
     });
 
+    test('Matchmaking never generates fake users and triggers noUsersOnline in Global mode when queue is empty', () async {
+      final originalGlobalTimeout = MatchmakingService.globalSearchTimeout;
+      MatchmakingService.globalSearchTimeout = const Duration(milliseconds: 150);
+
+      MatchmakingStatus? observedStatus;
+      MatchResult? observedMatch;
+
+      final statusSub = MatchmakingService.instance.statusStream.listen((s) {
+        observedStatus = s;
+      });
+      final matchSub = MatchmakingService.instance.matchStream.listen((m) {
+        observedMatch = m;
+      });
+
+      const profile = UserProfile(id: 'test_user_global_live_only');
+      await MatchmakingService.instance.findMatch(
+        myProfile: profile,
+        countryFilter: 'Global (Worldwide)',
+      );
+
+      await Future.delayed(const Duration(milliseconds: 250));
+
+      // Must never create a fake or dummy match
+      expect(observedMatch, isNull);
+      // Must transition to noUsersOnline when queue has no peers
+      expect(observedStatus, MatchmakingStatus.noUsersOnline);
+
+      await statusSub.cancel();
+      await matchSub.cancel();
+      await MatchmakingService.instance.cancelSearch();
+      MatchmakingService.globalSearchTimeout = originalGlobalTimeout;
+    });
+
     test('SupabaseService signOut clears session and resets to guest', () async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('local_user_id', 'custom_id');

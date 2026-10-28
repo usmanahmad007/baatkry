@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'features/home/home_screen.dart';
 import 'services/guest_session_service.dart';
 import 'services/permission_service.dart';
+import 'services/presence_service.dart';
 import 'services/supabase_service.dart';
 
 void main() async {
@@ -21,6 +22,9 @@ void main() async {
 
   // Initialize Supabase and load or create the user profile
   await SupabaseService.instance.initialize();
+
+  // Initialize real-time presence tracking for authentic live users
+  await PresenceService.instance.init();
 
   runApp(
     const ProviderScope(

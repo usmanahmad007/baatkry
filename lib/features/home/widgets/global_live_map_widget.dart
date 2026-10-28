@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../services/presence_service.dart';
 
 class GlobalLiveMapWidget extends StatefulWidget {
   final String selectedCountry;
@@ -22,9 +24,7 @@ class GlobalLiveMapWidget extends StatefulWidget {
 
 class _GlobalLiveMapWidgetState extends State<GlobalLiveMapWidget> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
-  final int _baseLiveUsers = 18492;
-  int _jitter = 0;
-  final math.Random _random = math.Random();
+  StreamSubscription<int>? _presenceSub;
 
   @override
   void initState() {
@@ -34,23 +34,19 @@ class _GlobalLiveMapWidgetState extends State<GlobalLiveMapWidget> with SingleTi
       duration: const Duration(seconds: 3),
     )..repeat();
 
-    // Subtle realistic user count fluctuations every 4 seconds
-    _animController.addStatusListener((status) {
-      if (status == AnimationStatus.forward && mounted) {
-        setState(() {
-          _jitter = _random.nextInt(15) - 7;
-        });
-      }
+    _presenceSub = PresenceService.instance.liveUsersCountStream.listen((_) {
+      if (mounted) setState(() {});
     });
   }
 
   @override
   void dispose() {
+    _presenceSub?.cancel();
     _animController.dispose();
     super.dispose();
   }
 
-  int get totalLiveCount => _baseLiveUsers + _jitter;
+  int get totalLiveCount => PresenceService.instance.totalLiveUsersCount;
 
   @override
   Widget build(BuildContext context) {
@@ -385,20 +381,20 @@ class WorldMapPainter extends CustomPainter {
     required this.selectedCountryCode,
   });
 
-  // Global regional hubs (normalized x: 0..1, y: 0..1, name, live user load)
+  // Global regional hubs (normalized x: 0..1, y: 0..1, name)
   static const List<MapHub> hubs = [
-    MapHub('North America East', 'US', 0.26, 0.36, 5420),
-    MapHub('North America West', 'US', 0.16, 0.38, 3890),
-    MapHub('South America', 'BR', 0.32, 0.68, 2750),
-    MapHub('Europe West', 'GB', 0.48, 0.28, 6180),
-    MapHub('Europe Central', 'DE', 0.53, 0.29, 4320),
-    MapHub('Middle East', 'AE', 0.61, 0.43, 2140),
-    MapHub('South Asia (PK/IN)', 'PK', 0.68, 0.44, 4890),
-    MapHub('East Asia (JP/KR)', 'JP', 0.84, 0.36, 3210),
-    MapHub('Southeast Asia', 'ID', 0.78, 0.58, 2980),
-    MapHub('Australia', 'AU', 0.86, 0.76, 1120),
-    MapHub('North Africa', 'EG', 0.55, 0.42, 1450),
-    MapHub('South Africa', 'ZA', 0.56, 0.74, 980),
+    MapHub('North America East', 'US', 0.26, 0.36),
+    MapHub('North America West', 'US', 0.16, 0.38),
+    MapHub('South America', 'BR', 0.32, 0.68),
+    MapHub('Europe West', 'GB', 0.48, 0.28),
+    MapHub('Europe Central', 'DE', 0.53, 0.29),
+    MapHub('Middle East', 'AE', 0.61, 0.43),
+    MapHub('South Asia (PK/IN)', 'PK', 0.68, 0.44),
+    MapHub('East Asia (JP/KR)', 'JP', 0.84, 0.36),
+    MapHub('Southeast Asia', 'ID', 0.78, 0.58),
+    MapHub('Australia', 'AU', 0.86, 0.76),
+    MapHub('North Africa', 'EG', 0.55, 0.42),
+    MapHub('South Africa', 'ZA', 0.56, 0.74),
   ];
 
   // Intercontinental connection pairs for live arcs
@@ -614,7 +610,6 @@ class MapHub {
   final String countryCode;
   final double x;
   final double y;
-  final int liveUsers;
 
-  const MapHub(this.name, this.countryCode, this.x, this.y, this.liveUsers);
+  const MapHub(this.name, this.countryCode, this.x, this.y);
 }

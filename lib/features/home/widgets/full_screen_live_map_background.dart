@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../services/presence_service.dart';
+import '../../../services/supabase_service.dart';
 
 class FullScreenLiveUsersMapBackground extends StatefulWidget {
   const FullScreenLiveUsersMapBackground({super.key});
@@ -12,6 +15,7 @@ class FullScreenLiveUsersMapBackground extends StatefulWidget {
 class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMapBackground>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
+  StreamSubscription<Map<String, int>>? _presenceSub;
 
   @override
   void initState() {
@@ -20,10 +24,15 @@ class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMa
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
+
+    _presenceSub = PresenceService.instance.countryCountsStream.listen((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _presenceSub?.cancel();
     _animController.dispose();
     super.dispose();
   }
@@ -31,6 +40,7 @@ class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMa
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final countryCounts = PresenceService.instance.countryCounts;
 
     return RepaintBoundary(
       child: AnimatedBuilder(
@@ -41,6 +51,7 @@ class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMa
             painter: FullScreenWorldMapPainter(
               animationProgress: _animController.value,
               isDark: isDark,
+              countryCounts: countryCounts,
             ),
           );
         },
@@ -52,26 +63,28 @@ class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMa
 class FullScreenWorldMapPainter extends CustomPainter {
   final double animationProgress;
   final bool isDark;
+  final Map<String, int> countryCounts;
 
   FullScreenWorldMapPainter({
     required this.animationProgress,
     required this.isDark,
+    this.countryCounts = const {},
   });
 
   // Global regional hubs (normalized x: 0..1, y: 0..1, name, live user load)
   static const List<LiveHub> hubs = [
-    LiveHub('North America East', 'US', 0.22, 0.32, 5420),
-    LiveHub('North America West', 'US', 0.14, 0.35, 3890),
-    LiveHub('South America', 'BR', 0.29, 0.68, 2750),
-    LiveHub('Europe West', 'GB', 0.47, 0.27, 6180),
-    LiveHub('Europe Central', 'DE', 0.52, 0.26, 4320),
-    LiveHub('Middle East', 'AE', 0.60, 0.40, 2140),
-    LiveHub('South Asia (PK/IN)', 'PK', 0.67, 0.42, 4890),
-    LiveHub('East Asia (JP/KR)', 'JP', 0.82, 0.33, 3210),
-    LiveHub('Southeast Asia', 'ID', 0.77, 0.56, 2980),
-    LiveHub('Australia', 'AU', 0.85, 0.75, 1120),
-    LiveHub('North Africa', 'EG', 0.54, 0.40, 1450),
-    LiveHub('South Africa', 'ZA', 0.55, 0.73, 980),
+    LiveHub('North America East', 'US', 0.22, 0.32),
+    LiveHub('North America West', 'US', 0.14, 0.35),
+    LiveHub('South America', 'BR', 0.29, 0.68),
+    LiveHub('Europe West', 'GB', 0.47, 0.27),
+    LiveHub('Europe Central', 'DE', 0.52, 0.26),
+    LiveHub('Middle East', 'AE', 0.60, 0.40),
+    LiveHub('South Asia (PK/IN)', 'PK', 0.67, 0.42),
+    LiveHub('East Asia (JP/KR)', 'JP', 0.82, 0.33),
+    LiveHub('Southeast Asia', 'ID', 0.77, 0.56),
+    LiveHub('Australia', 'AU', 0.85, 0.75),
+    LiveHub('North Africa', 'EG', 0.54, 0.40),
+    LiveHub('South Africa', 'ZA', 0.55, 0.73),
   ];
 
   // Intercontinental connection pairs for animated live arcs
@@ -131,18 +144,20 @@ class FullScreenWorldMapPainter extends CustomPainter {
     // 4. Draw curved live connection arcs between continents with traveling particles
     _drawConnectionArcs(canvas, size);
 
-    // 5. Draw live hubs with pulsing radar ripples and live user markers
+    // 5. Draw live hubs with pulsing radar ripples and authentic live user markers
     _drawHubs(canvas, size);
 
     // 6. Subtle corner vignette gradient for high foreground readability
     final vignettePaint = Paint()
       ..shader = RadialGradient(
         center: Alignment.center,
-        radius: 0.9,
+        radius: 0.95,
         colors: [
           Colors.transparent,
-          (isDark ? Colors.black : Colors.white).withOpacity(0.45),
+          Colors.transparent,
+          (isDark ? Colors.black : Colors.white).withOpacity(0.35),
         ],
+        stops: const [0.0, 0.65, 1.0],
       ).createShader(Rect.fromLTWH(0, 0, w, h));
     canvas.drawRect(Rect.fromLTWH(0, 0, w, h), vignettePaint);
   }
@@ -152,81 +167,88 @@ class FullScreenWorldMapPainter extends CustomPainter {
     final h = size.height;
 
     final continentPaint = Paint()
-      ..color = isDark ? const Color(0xFF1E293B).withOpacity(0.85) : const Color(0xFFCBD5E1).withOpacity(0.85)
+      ..color = isDark ? const Color(0xFF1E293B).withOpacity(0.45) : const Color(0xFFCBD5E1).withOpacity(0.5)
       ..style = PaintingStyle.fill;
 
-    // North America
-    final naPath = Path()
-      ..moveTo(w * 0.08, h * 0.14)
-      ..lineTo(w * 0.28, h * 0.14)
-      ..lineTo(w * 0.31, h * 0.22)
-      ..lineTo(w * 0.25, h * 0.40)
-      ..lineTo(w * 0.19, h * 0.48)
-      ..lineTo(w * 0.14, h * 0.40)
-      ..lineTo(w * 0.09, h * 0.28)
-      ..close();
-    canvas.drawPath(naPath, continentPaint);
+    final borderPaint = Paint()
+      ..color = isDark ? const Color(0xFF334155).withOpacity(0.6) : const Color(0xFF94A3B8).withOpacity(0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
 
-    // Greenland
-    final glPath = Path()
-      ..moveTo(w * 0.32, h * 0.08)
-      ..lineTo(w * 0.38, h * 0.09)
-      ..lineTo(w * 0.36, h * 0.16)
-      ..lineTo(w * 0.31, h * 0.14)
-      ..close();
-    canvas.drawPath(glPath, continentPaint);
+    void drawRegion(List<Offset> points) {
+      if (points.length < 3) return;
+      final path = Path()..moveTo(points[0].dx * w, points[0].dy * h);
+      for (int i = 1; i < points.length; i++) {
+        path.lineTo(points[i].dx * w, points[i].dy * h);
+      }
+      path.close();
+      canvas.drawPath(path, continentPaint);
+      canvas.drawPath(path, borderPaint);
+    }
+
+    // North America
+    drawRegion([
+      const Offset(0.08, 0.20),
+      const Offset(0.16, 0.16),
+      const Offset(0.24, 0.18),
+      const Offset(0.28, 0.28),
+      const Offset(0.23, 0.40),
+      const Offset(0.18, 0.44),
+      const Offset(0.15, 0.36),
+      const Offset(0.09, 0.32),
+    ]);
 
     // South America
-    final saPath = Path()
-      ..moveTo(w * 0.23, h * 0.52)
-      ..lineTo(w * 0.31, h * 0.55)
-      ..lineTo(w * 0.34, h * 0.65)
-      ..lineTo(w * 0.30, h * 0.84)
-      ..lineTo(w * 0.26, h * 0.82)
-      ..lineTo(w * 0.24, h * 0.65)
-      ..close();
-    canvas.drawPath(saPath, continentPaint);
+    drawRegion([
+      const Offset(0.25, 0.48),
+      const Offset(0.32, 0.52),
+      const Offset(0.34, 0.65),
+      const Offset(0.29, 0.82),
+      const Offset(0.24, 0.76),
+      const Offset(0.23, 0.58),
+    ]);
 
     // Europe
-    final euPath = Path()
-      ..moveTo(w * 0.45, h * 0.20)
-      ..lineTo(w * 0.54, h * 0.19)
-      ..lineTo(w * 0.55, h * 0.32)
-      ..lineTo(w * 0.44, h * 0.34)
-      ..lineTo(w * 0.43, h * 0.26)
-      ..close();
-    canvas.drawPath(euPath, continentPaint);
+    drawRegion([
+      const Offset(0.44, 0.18),
+      const Offset(0.54, 0.17),
+      const Offset(0.56, 0.26),
+      const Offset(0.50, 0.32),
+      const Offset(0.45, 0.29),
+      const Offset(0.43, 0.24),
+    ]);
 
     // Africa
-    final afPath = Path()
-      ..moveTo(w * 0.43, h * 0.38)
-      ..lineTo(w * 0.57, h * 0.38)
-      ..lineTo(w * 0.59, h * 0.53)
-      ..lineTo(w * 0.55, h * 0.77)
-      ..lineTo(w * 0.50, h * 0.76)
-      ..lineTo(w * 0.44, h * 0.55)
-      ..close();
-    canvas.drawPath(afPath, continentPaint);
+    drawRegion([
+      const Offset(0.45, 0.36),
+      const Offset(0.58, 0.36),
+      const Offset(0.60, 0.50),
+      const Offset(0.56, 0.72),
+      const Offset(0.51, 0.74),
+      const Offset(0.45, 0.58),
+      const Offset(0.43, 0.44),
+    ]);
 
     // Asia
-    final asPath = Path()
-      ..moveTo(w * 0.55, h * 0.16)
-      ..lineTo(w * 0.86, h * 0.16)
-      ..lineTo(w * 0.87, h * 0.38)
-      ..lineTo(w * 0.77, h * 0.52)
-      ..lineTo(w * 0.66, h * 0.48)
-      ..lineTo(w * 0.58, h * 0.35)
-      ..close();
-    canvas.drawPath(asPath, continentPaint);
+    drawRegion([
+      const Offset(0.57, 0.16),
+      const Offset(0.82, 0.18),
+      const Offset(0.88, 0.30),
+      const Offset(0.82, 0.45),
+      const Offset(0.74, 0.46),
+      const Offset(0.68, 0.52),
+      const Offset(0.62, 0.42),
+      const Offset(0.58, 0.30),
+    ]);
 
-    // Australia & Oceania
-    final auPath = Path()
-      ..moveTo(w * 0.80, h * 0.68)
-      ..lineTo(w * 0.89, h * 0.69)
-      ..lineTo(w * 0.88, h * 0.82)
-      ..lineTo(w * 0.81, h * 0.80)
-      ..close();
-    canvas.drawPath(auPath, continentPaint);
+    // Australia
+    drawRegion([
+      const Offset(0.79, 0.64),
+      const Offset(0.88, 0.63),
+      const Offset(0.90, 0.74),
+      const Offset(0.85, 0.82),
+      const Offset(0.78, 0.76),
+    ]);
   }
 
   void _drawConnectionArcs(Canvas canvas, Size size) {
@@ -235,26 +257,23 @@ class FullScreenWorldMapPainter extends CustomPainter {
 
     for (int i = 0; i < connectionPairs.length; i++) {
       final pair = connectionPairs[i];
-      final hubA = hubs[pair[0]];
-      final hubB = hubs[pair[1]];
+      final h1 = hubs[pair[0]];
+      final h2 = hubs[pair[1]];
 
-      final p1 = Offset(hubA.x * w, hubA.y * h);
-      final p2 = Offset(hubB.x * w, hubB.y * h);
+      final p1 = Offset(h1.x * w, h1.y * h);
+      final p2 = Offset(h2.x * w, h2.y * h);
 
-      // Arc bending height proportional to distance
-      final dist = (p2 - p1).distance;
-      final bend = math.min(dist * 0.22, 35.0);
-      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2 - bend);
-
+      // Quadratic curve bending upwards
+      final mid = Offset((p1.dx + p2.dx) / 2, math.min(p1.dy, p2.dy) - 35);
       final arcPath = Path()
         ..moveTo(p1.dx, p1.dy)
         ..quadraticBezierTo(mid.dx, mid.dy, p2.dx, p2.dy);
 
-      // Glowing curved arc line
       final arcPaint = Paint()
-        ..color = (isDark ? AppColors.brandIndigo : const Color(0xFF6366F1)).withOpacity(0.22)
+        ..color = (isDark ? AppColors.brandIndigo : const Color(0xFF6366F1))
+            .withOpacity(0.18)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2;
+        ..strokeWidth = 1.0;
       canvas.drawPath(arcPath, arcPaint);
 
       // Moving photon/light pulse along the arc
@@ -272,74 +291,86 @@ class FullScreenWorldMapPainter extends CustomPainter {
   void _drawHubs(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
+    final myCountryCode = (SupabaseService.instance.currentProfile?.countryCode ?? 'ALL').toUpperCase();
 
     for (final hub in hubs) {
       final center = Offset(hub.x * w, hub.y * h);
+      final rawCount = countryCounts[hub.countryCode] ?? 0;
+      final isMyCountry = hub.countryCode == myCountryCode;
+      final hubLiveCount = rawCount > 0 ? rawCount : (isMyCountry ? 1 : 0);
+      final hasLiveUsers = hubLiveCount > 0;
 
-      // Expanding radar ripple rings
-      final rippleRadius = 5.0 + 16.0 * animationProgress;
-      final rippleAlpha = (1.0 - animationProgress).clamp(0.0, 1.0);
+      // Expanding radar ripple rings for hubs with live users
+      if (hasLiveUsers) {
+        final rippleRadius = 5.0 + 16.0 * animationProgress;
+        final rippleAlpha = (1.0 - animationProgress).clamp(0.0, 1.0);
 
-      final ripplePaint = Paint()
-        ..color = (isDark ? AppColors.brandIndigo : const Color(0xFF6366F1))
-            .withOpacity(0.35 * rippleAlpha)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2;
-      canvas.drawCircle(center, rippleRadius, ripplePaint);
+        final ripplePaint = Paint()
+          ..color = (isDark ? AppColors.brandIndigo : const Color(0xFF6366F1))
+              .withOpacity(0.35 * rippleAlpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2;
+        canvas.drawCircle(center, rippleRadius, ripplePaint);
+      }
 
       // Core pulsating hub dot
       final corePaint = Paint()
-        ..color = isDark ? Colors.white : AppColors.brandIndigo
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(center, 3.2, corePaint);
+        ..color = hasLiveUsers
+            ? (isDark ? Colors.white : AppColors.brandIndigo)
+            : (isDark ? Colors.white.withOpacity(0.3) : Colors.black.withOpacity(0.2));
+      canvas.drawCircle(center, hasLiveUsers ? 3.2 : 2.0, corePaint);
 
-      // Inner glow
-      final glowPaint = Paint()
-        ..color = (isDark ? AppColors.brandPink : AppColors.brandIndigo).withOpacity(0.5)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
-      canvas.drawCircle(center, 5.5, glowPaint);
+      if (hasLiveUsers) {
+        // Inner glow
+        final glowPaint = Paint()
+          ..color = (isDark ? AppColors.brandPink : AppColors.brandIndigo).withOpacity(0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0;
+        canvas.drawCircle(center, 5.5, glowPaint);
 
-      // Live user badge near hub
-      final textSpan = TextSpan(
-        children: [
-          TextSpan(
-            text: '${hub.countryCode} ',
-            style: TextStyle(
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
+        // Authentic live user badge near hub
+        final textSpan = TextSpan(
+          children: [
+            TextSpan(
+              text: '${hub.countryCode} ',
+              style: TextStyle(
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-          TextSpan(
-            text: '• ${(hub.liveUsers / 1000).toStringAsFixed(1)}k live',
-            style: TextStyle(
-              color: isDark ? AppColors.brandPink : AppColors.brandIndigo,
-              fontSize: 8.5,
-              fontWeight: FontWeight.w600,
+            TextSpan(
+              text: '• $hubLiveCount live',
+              style: TextStyle(
+                color: isDark ? AppColors.brandPink : AppColors.brandIndigo,
+                fontSize: 8.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
-      );
-      final tp = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      );
-      tp.layout();
-      final pillRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(center.dx + 8, center.dy - 7, tp.width + 8, tp.height + 4),
-        const Radius.circular(6),
-      );
-      final pillPaint = Paint()
-        ..color = (isDark ? Colors.black : Colors.white).withOpacity(0.65);
-      canvas.drawRRect(pillRect, pillPaint);
-      tp.paint(canvas, Offset(center.dx + 12, center.dy - 5));
+          ],
+        );
+        final tp = TextPainter(
+          text: textSpan,
+          textDirection: TextDirection.ltr,
+        );
+        tp.layout();
+        final pillRect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(center.dx + 8, center.dy - 7, tp.width + 8, tp.height + 4),
+          const Radius.circular(6),
+        );
+        final pillPaint = Paint()
+          ..color = (isDark ? Colors.black : Colors.white).withOpacity(0.65);
+        canvas.drawRRect(pillRect, pillPaint);
+        tp.paint(canvas, Offset(center.dx + 12, center.dy - 5));
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant FullScreenWorldMapPainter oldDelegate) {
-    return oldDelegate.animationProgress != animationProgress || oldDelegate.isDark != isDark;
+    return oldDelegate.animationProgress != animationProgress ||
+        oldDelegate.isDark != isDark ||
+        oldDelegate.countryCounts != countryCounts;
   }
 }
 
@@ -348,7 +379,6 @@ class LiveHub {
   final String countryCode;
   final double x;
   final double y;
-  final int liveUsers;
 
-  const LiveHub(this.name, this.countryCode, this.x, this.y, this.liveUsers);
+  const LiveHub(this.name, this.countryCode, this.x, this.y);
 }
