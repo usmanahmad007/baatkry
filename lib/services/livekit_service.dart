@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import '../core/config/app_config.dart';
 import '../models/chat_message.dart';
+import '../models/gift_transaction.dart';
 import 'permission_service.dart';
 
 enum CallState { idle, connecting, connected, disconnected, failed }
@@ -26,11 +27,13 @@ class LiveKitService {
   final _callStateController = StreamController<CallState>.broadcast();
   final _remoteTrackController = StreamController<VideoTrack?>.broadcast();
   final _chatMessageController = StreamController<ChatMessage>.broadcast();
+  final _giftEventController = StreamController<GiftEvent>.broadcast();
   final _peerDisconnectedController = StreamController<void>.broadcast();
 
   Stream<CallState> get callStateStream => _callStateController.stream;
   Stream<VideoTrack?> get remoteTrackStream => _remoteTrackController.stream;
   Stream<ChatMessage> get chatMessageStream => _chatMessageController.stream;
+  Stream<GiftEvent> get giftEventStream => _giftEventController.stream;
   Stream<void> get peerDisconnectedStream => _peerDisconnectedController.stream;
 
   Room? get room => _room;
@@ -189,8 +192,14 @@ class LiveKitService {
         try {
           final str = utf8.decode(event.data);
           final map = jsonDecode(str) as Map<String, dynamic>;
-          final msg = ChatMessage.fromMap(map, myId: _room?.localParticipant?.identity ?? '');
-          _chatMessageController.add(msg);
+          final type = map['type'] as String?;
+          if (type == 'gift_event' || type == 'gift') {
+            final giftEvent = GiftEvent.fromMap(map);
+            _giftEventController.add(giftEvent);
+          } else {
+            final msg = ChatMessage.fromMap(map, myId: _room?.localParticipant?.identity ?? '');
+            _chatMessageController.add(msg);
+          }
         } catch (e) {
           debugPrint('[LiveKitService] Data message parse error: $e');
         }
@@ -258,6 +267,22 @@ class LiveKitService {
         await _room!.localParticipant!.publishData(bytes, reliable: true);
       } catch (e) {
         debugPrint('[LiveKitService] Send chat message error: $e');
+      }
+    }
+  }
+
+  /// Send virtual gift event over WebRTC reliable data channel
+  Future<void> sendGiftEvent(GiftEvent giftEvent) async {
+    // Notify local UI immediately
+    _giftEventController.add(giftEvent);
+
+    if (_room?.localParticipant != null) {
+      try {
+        final payload = jsonEncode(giftEvent.toMap());
+        final bytes = utf8.encode(payload);
+        await _room!.localParticipant!.publishData(bytes, reliable: true);
+      } catch (e) {
+        debugPrint('[LiveKitService] Send gift event error: $e');
       }
     }
   }

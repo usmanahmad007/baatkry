@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../core/config/app_config.dart';
 import '../models/coin_package.dart';
 import '../models/user_profile.dart';
+import '../models/virtual_gift.dart';
 import '../models/wallet.dart';
 import '../models/wallet_ledger_entry.dart';
 
@@ -966,6 +967,120 @@ class SupabaseService {
     await prefs.setStringList('local_tx_history_$userId', history);
 
     return true;
+  }
+
+  /// Fetch active virtual gifts catalog
+  Future<List<VirtualGift>> fetchActiveGifts() async {
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('gifts')
+            .select()
+            .eq('is_active', true)
+            .order('sort_order', ascending: true);
+
+        if (data.isNotEmpty) {
+          return data.map((item) => VirtualGift.fromMap(item)).toList();
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] Error loading gifts from DB, using defaults: $e');
+      }
+    }
+    return VirtualGift.defaultGifts;
+  }
+
+  /// Send a virtual gift atomically
+  Future<Map<String, dynamic>> sendVirtualGift({
+    required VirtualGift gift,
+    required String receiverId,
+    required String receiverName,
+    String? roomId,
+  }) async {
+    if (_currentProfile == null || _currentProfile!.isAnonymous) {
+      throw Exception('Guest users cannot send gifts. Please sign in with Google first.');
+    }
+
+    final currentCoins = _currentWallet?.balance ?? _currentProfile!.coins;
+    if (currentCoins < gift.coinPrice) {
+      throw Exception('Insufficient coins. Required: ${gift.coinPrice}, Available: $currentCoins');
+    }
+
+    final userId = _currentProfile!.id;
+    final idempotencyKey = const Uuid().v4();
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final res = await _client!.rpc(
+          'send_virtual_gift',
+          params: {
+            'p_gift_id': gift.id,
+            'p_receiver_id': receiverId,
+            'p_room_id': roomId,
+            'p_idempotency_key': idempotencyKey,
+          },
+        );
+
+        if (res is Map && res['success'] == true) {
+          final newBalance = (res['coins_balance'] as num?)?.toInt() ?? (currentCoins - gift.coinPrice);
+          _currentProfile = _currentProfile!.copyWith(coins: newBalance);
+          _profileController.add(_currentProfile);
+
+          if (_currentWallet != null) {
+            _currentWallet = _currentWallet!.copyWith(
+              balance: newBalance,
+              totalSpent: _currentWallet!.totalSpent + gift.coinPrice,
+              updatedAt: DateTime.now(),
+            );
+            _walletController.add(_currentWallet);
+          }
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('local_user_coins_$userId', newBalance);
+          await prefs.setInt('local_user_coins', newBalance);
+
+          return Map<String, dynamic>.from(res);
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] send_virtual_gift RPC note: $e');
+        // If receiver is a non-UUID mock or peer in test mode, proceed with local ledger debit
+        if (!receiverId.contains('-') || receiverId.startsWith('mock_')) {
+          // fall through to local fallback
+        } else {
+          rethrow;
+        }
+      }
+    }
+
+    // Local / Offline fallback logic:
+    final newBalance = currentCoins - gift.coinPrice;
+    _currentProfile = _currentProfile!.copyWith(coins: newBalance);
+    _profileController.add(_currentProfile);
+
+    if (_currentWallet != null) {
+      _currentWallet = _currentWallet!.copyWith(
+        balance: newBalance,
+        totalSpent: _currentWallet!.totalSpent + gift.coinPrice,
+        updatedAt: DateTime.now(),
+      );
+      _walletController.add(_currentWallet);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('local_user_coins_$userId', newBalance);
+    await prefs.setInt('local_user_coins', newBalance);
+
+    final history = prefs.getStringList('local_tx_history_$userId') ?? [];
+    history.insert(0, '$idempotencyKey|gift_sent|-${gift.coinPrice}|$newBalance|Sent ${gift.name} to $receiverName');
+    await prefs.setStringList('local_tx_history_$userId', history);
+
+    return {
+      'success': true,
+      'gift_transaction_id': idempotencyKey,
+      'coins_deducted': gift.coinPrice,
+      'coins_balance': newBalance,
+      'gift': gift.name,
+      'creator_earned_usd': 0.0,
+    };
   }
 
   /// Update coins in-memory and broadcast immediately to all listeners

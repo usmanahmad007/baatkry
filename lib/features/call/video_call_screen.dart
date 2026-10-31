@@ -9,12 +9,15 @@ import 'package:livekit_client/livekit_client.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/chat_message.dart';
+import '../../models/gift_transaction.dart';
 import '../../models/user_profile.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
 import '../../services/matchmaking_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
+import '../gift/gift_animation_overlay.dart';
+import '../gift/gift_modal.dart';
 import '../home/widgets/country_picker_modal.dart';
 import '../moderation/eula_modal.dart';
 import '../moderation/report_modal.dart';
@@ -47,6 +50,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   StreamSubscription<VideoTrack?>? _remoteTrackSub;
   StreamSubscription<ChatMessage>? _chatSub;
+  StreamSubscription<GiftEvent>? _giftSub;
   StreamSubscription<void>? _peerDisconnectedSub;
   StreamSubscription<UserProfile?>? _profileSub;
   StreamSubscription<MatchResult>? _matchSub;
@@ -727,6 +731,24 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       }
     });
 
+    _giftSub = _liveKit.giftEventStream.listen((event) {
+      if (mounted) {
+        final isMe = event.senderId == (widget.myProfile.id);
+        final systemMsg = ChatMessage(
+          id: 'gift_${DateTime.now().millisecondsSinceEpoch}',
+          senderId: event.senderId,
+          senderName: 'System',
+          text: isMe
+              ? '🎁 You sent ${event.giftName} ${event.emoji} (${event.coins} Coins)'
+              : '🎁 ${event.senderName} sent ${event.giftName} ${event.emoji} (${event.coins} Coins)',
+          timestamp: event.timestamp,
+          isMe: isMe,
+        );
+        setState(() => _messages.add(systemMsg));
+        _scrollChatToBottom();
+      }
+    });
+
     _peerDisconnectedSub = _liveKit.peerDisconnectedStream.listen((_) {
       if (mounted && !_isSearchingNext) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -787,6 +809,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     }
     _remoteTrackSub?.cancel();
     _chatSub?.cancel();
+    _giftSub?.cancel();
     _peerDisconnectedSub?.cancel();
     _liveKit.disconnect();
     _liveKit.stopLocalPreview();
@@ -1167,7 +1190,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Focus(
+      body: GiftAnimationOverlay(
+        child: Focus(
         autofocus: true,
         onKeyEvent: (node, event) {
           if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
@@ -1312,8 +1336,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ---------------------------------------------------------------------------
   // Top Navigation Bar (Modern pills and controls)
@@ -1986,35 +2011,73 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             ),
           ),
 
-          // Bottom Right: Big Skip/Next Button
+          // Bottom Right: Quick Gift + Big Skip/Next Button
           Positioned(
             bottom: 14,
             right: 14,
-            child: InkWell(
-              onTap: _isSearchingNext ? null : _onSkipToNext,
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: _isSearchingNext ? null : AppColors.primaryGradient,
-                  color: _isSearchingNext ? Colors.white24 : null,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white30, width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.brandIndigo.withOpacity(0.5),
-                      blurRadius: 14,
-                      offset: const Offset(0, 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!_isSearchingNext) ...[
+                  InkWell(
+                    onTap: () {
+                      GiftModal.show(
+                        context,
+                        peerId: _activeMatchResult.peerId,
+                        peerName: _activeMatchResult.peerName,
+                        roomId: _activeMatchResult.roomId,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        gradient: AppColors.vipGoldGradient,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white70, width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.coinGold.withOpacity(0.4),
+                            blurRadius: 14,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Text('🎁', style: TextStyle(fontSize: 22)),
+                      ),
                     ),
-                  ],
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                InkWell(
+                  onTap: _isSearchingNext ? null : _onSkipToNext,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: _isSearchingNext ? null : AppColors.primaryGradient,
+                      color: _isSearchingNext ? Colors.white24 : null,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white30, width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.brandIndigo.withOpacity(0.5),
+                          blurRadius: 14,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      _isSearchingNext ? Icons.hourglass_top_rounded : Icons.fast_forward_rounded,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  _isSearchingNext ? Icons.hourglass_top_rounded : Icons.fast_forward_rounded,
-                  color: Colors.white,
-                  size: 26,
-                ),
-              ),
+              ],
             ),
           ),
         ],
@@ -2181,7 +2244,12 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                 // Gift / Coin Button (🎁)
                 InkWell(
                   onTap: () {
-                    ShopModal.show(context);
+                    GiftModal.show(
+                      context,
+                      peerId: _activeMatchResult.peerId,
+                      peerName: _activeMatchResult.peerName,
+                      roomId: _activeMatchResult.roomId,
+                    );
                   },
                   child: Container(
                     margin: const EdgeInsets.only(left: 4),

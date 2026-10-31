@@ -152,7 +152,7 @@ void main() {
     });
 
     test('CoinPackage.availablePackages has standard defaults', () {
-      final packages = CoinPackage.availablePackages;
+      const packages = CoinPackage.availablePackages;
       expect(packages.length, greaterThanOrEqualTo(5));
 
       final starter = packages.firstWhere((p) => p.id == 'pack_starter_500');

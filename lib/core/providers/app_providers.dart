@@ -4,3 +4,4 @@ export 'presence_provider.dart';
 export 'theme_provider.dart';
 export 'user_provider.dart';
 export 'wallet_provider.dart';
+export 'gift_provider.dart';
