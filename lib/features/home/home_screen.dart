@@ -17,6 +17,7 @@ import '../matchmaking/radar_screen.dart';
 import '../moderation/age_consent_modal.dart';
 import '../moderation/eula_modal.dart';
 import '../shop/shop_modal.dart';
+import '../wallet/wallet_screen.dart';
 import 'widgets/country_picker_modal.dart';
 import 'widgets/full_screen_live_map_background.dart';
 
@@ -909,14 +910,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   onTap: () => EulaModal.checkAndShow(context, onAccepted: () {}),
                 ),
                 _buildNavPill(
-                  icon: Icons.monetization_on_rounded,
+                  icon: Icons.account_balance_wallet_rounded,
                   label: isGuest ? '0 Coins' : '$coins Coins',
                   accentColor: isGuest ? AppColors.textMuted : AppColors.coinGold,
                   onTap: () {
                     if (isGuest) {
                       _showGuestCoinInfoDialog();
                     } else {
-                      ShopModal.show(context);
+                      WalletScreen.show(context);
                     }
                   },
                 ),

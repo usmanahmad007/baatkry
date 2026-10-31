@@ -7,7 +7,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
+import '../models/coin_package.dart';
 import '../models/user_profile.dart';
+import '../models/wallet.dart';
+import '../models/wallet_ledger_entry.dart';
 
 enum GoogleAgeStatus {
   verifiedAdult,   // Age 18+ confirmed via Google/Gmail metadata or People API
@@ -22,11 +25,16 @@ class SupabaseService {
   SupabaseClient? _client;
   UserProfile? _currentProfile;
   final _profileController = StreamController<UserProfile?>.broadcast();
+  UserWallet? _currentWallet;
+  final _walletController = StreamController<UserWallet?>.broadcast();
+  RealtimeChannel? _walletChannel;
   String? _browserDeviceId;
   bool _hasUsedJoiningBonus = false;
 
   Stream<UserProfile?> get profileStream => _profileController.stream;
   UserProfile? get currentProfile => _currentProfile;
+  Stream<UserWallet?> get walletStream => _walletController.stream;
+  UserWallet? get currentWallet => _currentWallet;
   bool get isAuthenticated => _currentProfile != null && !_currentProfile!.isAnonymous;
   bool get isGuest => _currentProfile == null || _currentProfile!.isAnonymous;
   bool get hasUsedJoiningBonus => _hasUsedJoiningBonus;
@@ -110,6 +118,7 @@ class SupabaseService {
               }
               _currentProfile = profile;
               _profileController.add(_currentProfile);
+              await _syncUserWallet(user.id);
             }
           } else if (event == AuthChangeEvent.signedOut) {
             await _loadOrCreateProfile();
@@ -162,6 +171,7 @@ class SupabaseService {
           );
       _currentProfile = profile;
       _profileController.add(_currentProfile);
+      await _syncUserWallet(user.id);
       return profile;
     }
 
@@ -201,6 +211,154 @@ class SupabaseService {
       debugPrint('[SupabaseService] Error fetching remote profile: $e');
     }
     return null;
+  }
+
+  Future<UserWallet?> _syncUserWallet(String userId) async {
+    if (_client == null || !AppConfig.isSupabaseConfigured) {
+      final localWallet = UserWallet(
+        id: 'local_wallet_$userId',
+        userId: userId,
+        balance: _currentProfile?.coins ?? 0,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      _currentWallet = localWallet;
+      _walletController.add(_currentWallet);
+      return localWallet;
+    }
+
+    try {
+      // 1. Ensure wallet exists in database via stored procedure
+      try {
+        await _client!.rpc('ensure_user_wallet', params: {'p_user_id': userId});
+      } catch (e) {
+        debugPrint('[SupabaseService] ensure_user_wallet note: $e');
+      }
+
+      // 2. Fetch wallet record
+      final data = await _client!.from('wallets').select().eq('user_id', userId).maybeSingle();
+      if (data != null) {
+        final wallet = UserWallet.fromMap(data);
+        _currentWallet = wallet;
+        _walletController.add(_currentWallet);
+
+        // Keep profile coins aligned with ledger balance
+        if (_currentProfile != null && _currentProfile!.coins != wallet.balance) {
+          _currentProfile = _currentProfile!.copyWith(coins: wallet.balance);
+          _profileController.add(_currentProfile);
+        }
+
+        // 3. Setup real-time listener on wallets table for this user
+        _subscribeToWalletChanges(userId);
+        return wallet;
+      }
+    } catch (e) {
+      debugPrint('[SupabaseService] Error syncing user wallet: $e');
+    }
+
+    return null;
+  }
+
+  void _subscribeToWalletChanges(String userId) {
+    if (_client == null) return;
+    try {
+      _walletChannel?.unsubscribe();
+      _walletChannel = _client!
+          .channel('wallet_changes_$userId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'wallets',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: userId,
+            ),
+            callback: (payload) {
+              final newRecord = payload.newRecord;
+              if (newRecord.isNotEmpty) {
+                final updatedWallet = UserWallet.fromMap(newRecord);
+                _currentWallet = updatedWallet;
+                _walletController.add(updatedWallet);
+
+                if (_currentProfile != null && _currentProfile!.coins != updatedWallet.balance) {
+                  _currentProfile = _currentProfile!.copyWith(coins: updatedWallet.balance);
+                  _profileController.add(_currentProfile);
+                }
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('[SupabaseService] Error subscribing to wallet changes: $e');
+    }
+  }
+
+  /// Fetch user wallet
+  Future<UserWallet?> fetchUserWallet() async {
+    final userId = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (userId == null) return null;
+    return _syncUserWallet(userId);
+  }
+
+  /// Fetch dynamic coin packages from database
+  Future<List<CoinPackage>> fetchCoinPackages() async {
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('coin_packages')
+            .select()
+            .eq('is_active', true)
+            .order('sort_order', ascending: true);
+
+        if (data.isNotEmpty) {
+          return data.map((item) => CoinPackage.fromMap(item)).toList();
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] Error loading coin packages from DB, using defaults: $e');
+      }
+    }
+    return CoinPackage.availablePackages;
+  }
+
+  /// Fetch immutable ledger transaction history
+  Future<List<WalletLedgerEntry>> fetchWalletLedger({int limit = 50}) async {
+    final userId = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (userId == null) return [];
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('wallet_ledger')
+            .select()
+            .eq('user_id', userId)
+            .order('created_at', ascending: false)
+            .limit(limit);
+
+        if (data.isNotEmpty) {
+          return data.map((item) => WalletLedgerEntry.fromMap(item)).toList();
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] Error loading wallet ledger: $e');
+      }
+    }
+
+    // Local / Offline fallback mock history
+    final prefs = await SharedPreferences.getInstance();
+    final savedPurchases = prefs.getStringList('local_tx_history_$userId') ?? [];
+    return savedPurchases.map((s) {
+      final parts = s.split('|');
+      return WalletLedgerEntry(
+        id: parts[0],
+        walletId: 'local_wallet_$userId',
+        userId: userId,
+        type: LedgerTransactionType.fromString(parts.length > 1 ? parts[1] : 'purchase'),
+        amount: parts.length > 2 ? (int.tryParse(parts[2]) ?? 0) : 0,
+        balanceAfter: parts.length > 3 ? (int.tryParse(parts[3]) ?? 0) : 0,
+        description: parts.length > 4 ? parts[4] : 'Coin transaction',
+        createdAt: DateTime.now(),
+      );
+    }).toList();
   }
 
   /// Sign in as Anonymous Guest (One-click Omegle entry)
@@ -657,6 +815,13 @@ class SupabaseService {
 
   /// Sign out and revert to Anonymous Guest
   Future<void> signOut() async {
+    try {
+      _walletChannel?.unsubscribe();
+    } catch (_) {}
+    _walletChannel = null;
+    _currentWallet = null;
+    _walletController.add(null);
+
     if (_client != null) {
       try {
         await _client!.auth.signOut();
@@ -715,43 +880,91 @@ class SupabaseService {
     _profileController.add(_currentProfile);
   }
 
-  /// Complete a Coin / VIP Purchase in Rupees (Fails if user is anonymous)
-  Future<bool> processPurchase({required String packageId, required int coinsAdded, required int priceRs}) async {
+  /// Complete a Coin / VIP Purchase via atomic stored procedure
+  Future<bool> processPurchase({
+    required String packageId,
+    required int coinsAdded,
+    required int priceRs,
+    double? priceUsd,
+    String gateway = 'safepay',
+  }) async {
     if (_currentProfile == null || _currentProfile!.isAnonymous) {
       throw Exception('Purchase rejected: User must be logged in with Google to make purchases.');
     }
 
-    final updatedCoins = _currentProfile!.coins + coinsAdded;
-    final isVip = packageId.contains('2500') || packageId.contains('5000') || _currentProfile!.isVip;
-
-    _currentProfile = _currentProfile!.copyWith(
-      coins: updatedCoins,
-      isVip: isVip,
-    );
+    final userId = _currentProfile!.id;
+    final idempotencyKey = const Uuid().v4();
+    final effectivePriceUsd = priceUsd ?? (priceRs / 280.0);
 
     if (_client != null && AppConfig.isSupabaseConfigured) {
       try {
-        await _client!.from('coin_transactions').insert({
-          'user_id': _currentProfile!.id,
-          'package_id': packageId,
-          'amount_usd': priceRs / 280.0, // stored equivalent
-          'coins_added': coinsAdded,
-        });
-        await _client!.from('profiles').update({
-          'coins': _currentProfile!.coins,
-          'is_vip': _currentProfile!.isVip,
-        }).eq('id', _currentProfile!.id);
+        // Execute atomic stored procedure
+        final res = await _client!.rpc(
+          'process_verified_coin_purchase',
+          params: {
+            'p_user_id': userId,
+            'p_package_id': packageId,
+            'p_gateway': gateway,
+            'p_gateway_order_id': 'ord_$idempotencyKey',
+            'p_gateway_payment_id': 'pay_$idempotencyKey',
+            'p_amount_paid': effectivePriceUsd,
+            'p_currency': 'USD',
+            'p_idempotency_key': idempotencyKey,
+          },
+        );
+
+        if (res is Map && res['success'] == true) {
+          final newBalance = (res['coins_balance'] as num?)?.toInt() ?? (_currentProfile!.coins + coinsAdded);
+          final isVip = packageId.contains('2500') || packageId.contains('5000') || _currentProfile!.isVip;
+
+          _currentProfile = _currentProfile!.copyWith(coins: newBalance, isVip: isVip);
+          _profileController.add(_currentProfile);
+
+          if (_currentWallet != null) {
+            _currentWallet = _currentWallet!.copyWith(
+              balance: newBalance,
+              totalPurchased: _currentWallet!.totalPurchased + coinsAdded,
+              updatedAt: DateTime.now(),
+            );
+            _walletController.add(_currentWallet);
+          }
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('local_user_coins_$userId', newBalance);
+          await prefs.setInt('local_user_coins', newBalance);
+          await prefs.setBool('local_user_is_vip', isVip);
+          return true;
+        }
       } catch (e) {
-        debugPrint('[SupabaseService] Error logging purchase to Supabase: $e');
+        debugPrint('[SupabaseService] process_verified_coin_purchase RPC note: $e');
       }
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('local_user_coins_${_currentProfile!.id}', _currentProfile!.coins);
-    await prefs.setInt('local_user_coins', _currentProfile!.coins);
-    await prefs.setBool('local_user_is_vip', _currentProfile!.isVip);
+    // Local / Offline fallback logic:
+    final updatedCoins = _currentProfile!.coins + coinsAdded;
+    final isVip = packageId.contains('2500') || packageId.contains('5000') || _currentProfile!.isVip;
 
+    _currentProfile = _currentProfile!.copyWith(coins: updatedCoins, isVip: isVip);
     _profileController.add(_currentProfile);
+
+    if (_currentWallet != null) {
+      _currentWallet = _currentWallet!.copyWith(
+        balance: updatedCoins,
+        totalPurchased: _currentWallet!.totalPurchased + coinsAdded,
+        updatedAt: DateTime.now(),
+      );
+      _walletController.add(_currentWallet);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('local_user_coins_$userId', updatedCoins);
+    await prefs.setInt('local_user_coins', updatedCoins);
+    await prefs.setBool('local_user_is_vip', isVip);
+
+    final history = prefs.getStringList('local_tx_history_$userId') ?? [];
+    history.insert(0, '$idempotencyKey|purchase|$coinsAdded|$updatedCoins|Purchased $packageId');
+    await prefs.setStringList('local_tx_history_$userId', history);
+
     return true;
   }
 
@@ -761,6 +974,11 @@ class SupabaseService {
     final validBalance = newBalance < 0 ? 0 : newBalance;
     _currentProfile = _currentProfile!.copyWith(coins: validBalance);
     _profileController.add(_currentProfile);
+
+    if (_currentWallet != null) {
+      _currentWallet = _currentWallet!.copyWith(balance: validBalance, updatedAt: DateTime.now());
+      _walletController.add(_currentWallet);
+    }
   }
 
   /// Update and persist exact coins balance to DB and SharedPreferences
@@ -771,9 +989,15 @@ class SupabaseService {
     _currentProfile = _currentProfile!.copyWith(coins: validBalance);
     _profileController.add(_currentProfile);
 
+    if (_currentWallet != null) {
+      _currentWallet = _currentWallet!.copyWith(balance: validBalance, updatedAt: DateTime.now());
+      _walletController.add(_currentWallet);
+    }
+
     if (_client != null && AppConfig.isSupabaseConfigured) {
       try {
         await _client!.from('profiles').update({'coins': validBalance}).eq('id', _currentProfile!.id);
+        await _client!.from('wallets').update({'balance': validBalance, 'updated_at': DateTime.now().toIso8601String()}).eq('user_id', _currentProfile!.id);
       } catch (_) {}
     }
 
@@ -785,8 +1009,7 @@ class SupabaseService {
   }
 
   /// Deduct coins (e.g. for +15s time boost, VIP filter, or country filter)
-  Future<bool> deductCoins(int amount) async {
-    // Before signup or login, user cannot use coins
+  Future<bool> deductCoins(int amount, {String description = 'Call / VIP feature', String? idempotencyKey}) async {
     if (_currentProfile == null || _currentProfile!.isAnonymous) {
       return false;
     }
@@ -794,10 +1017,59 @@ class SupabaseService {
       return false;
     }
 
+    final userId = _currentProfile!.id;
     final newBalance = _currentProfile!.coins - amount;
+    final effectiveKey = idempotencyKey ?? const Uuid().v4();
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        await _client!.rpc(
+          'deduct_wallet_coins',
+          params: {
+            'p_amount': amount,
+            'p_description': description,
+            'p_idempotency_key': effectiveKey,
+          },
+        );
+      } catch (_) {
+        // Fallback to direct wallet & profile update if RPC is missing
+        try {
+          await _client!.from('wallets').update({
+            'balance': newBalance,
+            'total_spent': (_currentWallet?.totalSpent ?? 0) + amount,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('user_id', userId);
+
+          await _client!.from('wallet_ledger').insert({
+            'wallet_id': _currentWallet?.id,
+            'user_id': userId,
+            'type': 'feature_unlock',
+            'amount': -amount,
+            'balance_after': newBalance,
+            'description': description,
+            'idempotency_key': 'deduct_$effectiveKey',
+          });
+        } catch (_) {}
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('baatkry_bonus_used_on_device', true);
     _hasUsedJoiningBonus = true;
+
+    final history = prefs.getStringList('local_tx_history_$userId') ?? [];
+    history.insert(0, '$effectiveKey|feature_unlock|-$amount|$newBalance|$description');
+    await prefs.setStringList('local_tx_history_$userId', history);
+
+    if (_currentWallet != null) {
+      _currentWallet = _currentWallet!.copyWith(
+        balance: newBalance,
+        totalSpent: _currentWallet!.totalSpent + amount,
+        updatedAt: DateTime.now(),
+      );
+      _walletController.add(_currentWallet);
+    }
+
     return updateCoinsBalance(newBalance);
   }
 

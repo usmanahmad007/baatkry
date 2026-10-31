@@ -6,6 +6,7 @@ import '../../models/coin_package.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
 import '../moderation/age_consent_modal.dart';
+import '../wallet/wallet_screen.dart';
 
 class ShopModal extends ConsumerStatefulWidget {
   const ShopModal({super.key});
@@ -51,6 +52,7 @@ class _ShopModalState extends ConsumerState<ShopModal> {
         packageId: package.id,
         coinsAdded: package.coins,
         priceRs: package.priceRs,
+        priceUsd: package.priceUsd,
       );
 
       if (mounted) {
@@ -195,6 +197,7 @@ class _ShopModalState extends ConsumerState<ShopModal> {
   Widget build(BuildContext context) {
     final userCoins = ref.watch(userCoinsProvider);
     final isGuest = ref.watch(isGuestProvider);
+    final packagesAsync = ref.watch(coinPackagesProvider);
 
     return Container(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.90),
@@ -238,24 +241,33 @@ class _ShopModalState extends ConsumerState<ShopModal> {
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.coinGold.withOpacity(0.2), AppColors.coinGoldDark.withOpacity(0.1)],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.coinGold.withOpacity(0.4)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.circle, color: AppColors.coinGold, size: 10),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$userCoins Coins',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.coinGold, fontSize: 13),
+              InkWell(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  WalletScreen.show(context);
+                },
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppColors.coinGold.withOpacity(0.2), AppColors.coinGoldDark.withOpacity(0.1)],
                     ),
-                  ],
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.coinGold.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.circle, color: AppColors.coinGold, size: 10),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$userCoins Coins',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.coinGold, fontSize: 13),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.coinGold, size: 10),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -345,12 +357,31 @@ class _ShopModalState extends ConsumerState<ShopModal> {
             ),
           const SizedBox(height: 14),
           Expanded(
-            child: ListView.separated(
-              itemCount: CoinPackage.availablePackages.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final package = CoinPackage.availablePackages[index];
-                return _buildPackageCard(package);
+            child: packagesAsync.when(
+              data: (packages) {
+                final displayPackages = packages.isNotEmpty ? packages : CoinPackage.availablePackages;
+                return ListView.separated(
+                  itemCount: displayPackages.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final package = displayPackages[index];
+                    return _buildPackageCard(package);
+                  },
+                );
+              },
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: AppColors.brandIndigo),
+              ),
+              error: (_, __) {
+                const displayPackages = CoinPackage.availablePackages;
+                return ListView.separated(
+                  itemCount: displayPackages.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final package = displayPackages[index];
+                    return _buildPackageCard(package);
+                  },
+                );
               },
             ),
           ),
@@ -469,12 +500,26 @@ class _ShopModalState extends ConsumerState<ShopModal> {
                 backgroundColor: Colors.transparent,
                 shadowColor: Colors.transparent,
                 foregroundColor: package.isPopular ? Colors.black : Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
-              child: Text(
-                'Rs. ${package.priceRs}',
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Rs. ${package.priceRs}',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                  ),
+                  if (package.priceUsd > 0)
+                    Text(
+                      '\$${package.priceUsd.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                        color: (package.isPopular ? Colors.black87 : Colors.white70),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
