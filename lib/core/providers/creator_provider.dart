@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../models/commission_rule.dart';
 import '../../models/creator_application.dart';
+import '../../models/creator_earning_entry.dart';
 import '../../models/creator_profile.dart';
+import '../../models/creator_wallet.dart';
 import '../../services/supabase_service.dart';
 import 'user_provider.dart';
 
@@ -23,3 +26,28 @@ final creatorProfileProvider = FutureProvider.family<CreatorProfile?, String>((r
   if (creatorId.isEmpty) return null;
   return SupabaseService.instance.fetchCreatorProfile(creatorId);
 });
+
+/// Real-time stream of the current creator's earnings wallet
+final creatorWalletStreamProvider = StreamProvider<CreatorWallet?>((ref) {
+  return SupabaseService.instance.creatorWalletStream;
+});
+
+/// Fetches creator's real-money wallet
+final creatorWalletProvider = FutureProvider<CreatorWallet?>((ref) async {
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  if (profile == null || profile.isAnonymous) return null;
+  return SupabaseService.instance.fetchCreatorWallet(profile.id);
+});
+
+/// Fetches creator's itemized gift earnings ledger
+final creatorEarningsProvider = FutureProvider<List<CreatorEarningEntry>>((ref) async {
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  if (profile == null || profile.isAnonymous) return [];
+  return SupabaseService.instance.fetchCreatorEarnings();
+});
+
+/// Fetches active platform commission rules
+final activeCommissionRuleProvider = FutureProvider<CommissionRule>((ref) async {
+  return SupabaseService.instance.fetchActiveCommissionRule();
+});
+

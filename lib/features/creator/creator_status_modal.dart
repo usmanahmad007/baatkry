@@ -4,6 +4,7 @@ import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/creator_application.dart';
 import 'creator_application_modal.dart';
+import 'creator_dashboard_screen.dart';
 
 class CreatorStatusModal extends ConsumerWidget {
   const CreatorStatusModal({super.key});
@@ -175,6 +176,24 @@ class CreatorStatusModal extends ConsumerWidget {
                       style: TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    CreatorDashboardScreen.show(context);
+                  },
+                  icon: const Icon(Icons.account_balance_wallet_rounded, size: 18, color: Colors.black),
+                  label: const Text('Open Earnings Dashboard', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.coinGold,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
                 ),
               ),
             ],

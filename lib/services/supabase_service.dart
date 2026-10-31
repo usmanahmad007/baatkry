@@ -8,8 +8,11 @@ import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
 import '../models/coin_package.dart';
+import '../models/commission_rule.dart';
 import '../models/creator_application.dart';
+import '../models/creator_earning_entry.dart';
 import '../models/creator_profile.dart';
+import '../models/creator_wallet.dart';
 import '../models/user_profile.dart';
 import '../models/virtual_gift.dart';
 import '../models/wallet.dart';
@@ -31,6 +34,9 @@ class SupabaseService {
   UserWallet? _currentWallet;
   final _walletController = StreamController<UserWallet?>.broadcast();
   RealtimeChannel? _walletChannel;
+  CreatorWallet? _currentCreatorWallet;
+  final _creatorWalletController = StreamController<CreatorWallet?>.broadcast();
+  RealtimeChannel? _creatorWalletChannel;
   String? _browserDeviceId;
   bool _hasUsedJoiningBonus = false;
 
@@ -38,6 +44,8 @@ class SupabaseService {
   UserProfile? get currentProfile => _currentProfile;
   Stream<UserWallet?> get walletStream => _walletController.stream;
   UserWallet? get currentWallet => _currentWallet;
+  Stream<CreatorWallet?> get creatorWalletStream => _creatorWalletController.stream;
+  CreatorWallet? get currentCreatorWallet => _currentCreatorWallet;
   bool get isAuthenticated => _currentProfile != null && !_currentProfile!.isAnonymous;
   bool get isGuest => _currentProfile == null || _currentProfile!.isAnonymous;
   bool get hasUsedJoiningBonus => _hasUsedJoiningBonus;
@@ -820,10 +828,14 @@ class SupabaseService {
   Future<void> signOut() async {
     try {
       _walletChannel?.unsubscribe();
+      _creatorWalletChannel?.unsubscribe();
     } catch (_) {}
     _walletChannel = null;
+    _creatorWalletChannel = null;
     _currentWallet = null;
+    _currentCreatorWallet = null;
     _walletController.add(null);
+    _creatorWalletController.add(null);
 
     if (_client != null) {
       try {
@@ -1254,6 +1266,139 @@ class SupabaseService {
       'application_id': applicationId,
       'status': action == 'approve' ? 'approved' : 'rejected',
     };
+  }
+
+  // ===========================================================================
+  // CREATOR FINANCIAL EARNINGS & WALLET METHODS (Phase 6)
+  // ===========================================================================
+
+  /// Real-time subscription to creator's earnings wallet
+  void _subscribeToCreatorWalletChanges(String creatorId) {
+    if (_client == null) return;
+    try {
+      _creatorWalletChannel?.unsubscribe();
+      _creatorWalletChannel = _client!
+          .channel('creator_wallet_$creatorId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'creator_wallets',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'creator_id',
+              value: creatorId,
+            ),
+            callback: (payload) {
+              final newRecord = payload.newRecord;
+              if (newRecord.isNotEmpty) {
+                final wallet = CreatorWallet.fromMap(newRecord);
+                _currentCreatorWallet = wallet;
+                _creatorWalletController.add(wallet);
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('[SupabaseService] Error subscribing to creator wallet changes: $e');
+    }
+  }
+
+  /// Fetch creator's real-money earnings wallet
+  Future<CreatorWallet?> fetchCreatorWallet([String? creatorId]) async {
+    final uid = creatorId ?? _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) return null;
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('creator_wallets')
+            .select()
+            .eq('creator_id', uid)
+            .maybeSingle();
+
+        if (data != null) {
+          final wallet = CreatorWallet.fromMap(data);
+          _currentCreatorWallet = wallet;
+          _creatorWalletController.add(wallet);
+          _subscribeToCreatorWalletChanges(uid);
+          return wallet;
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] fetchCreatorWallet error: $e');
+      }
+    }
+
+    // Local / Offline fallback
+    final prefs = await SharedPreferences.getInstance();
+    final avail = prefs.getDouble('local_creator_avail_$uid') ?? 0.0;
+    final life = prefs.getDouble('local_creator_life_$uid') ?? avail;
+    final withdrawn = prefs.getDouble('local_creator_withdrawn_$uid') ?? 0.0;
+
+    final fallbackWallet = CreatorWallet(
+      id: 'local_creator_wallet_$uid',
+      creatorId: uid,
+      availableEarningsUsd: avail,
+      pendingEarningsUsd: 0.0,
+      lifetimeEarningsUsd: life,
+      withdrawnEarningsUsd: withdrawn,
+    );
+    _currentCreatorWallet = fallbackWallet;
+    _creatorWalletController.add(fallbackWallet);
+    return fallbackWallet;
+  }
+
+  /// Fetch creator itemized gift earnings ledger
+  Future<List<CreatorEarningEntry>> fetchCreatorEarnings({int limit = 50}) async {
+    final uid = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) return [];
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('creator_earnings')
+            .select('''
+              id, creator_id, gift_transaction_id, gross_amount_usd,
+              platform_commission_usd, net_earning_usd, status, created_at,
+              gift_transactions (
+                gift_id, coins_spent, sender_id
+              )
+            ''')
+            .eq('creator_id', uid)
+            .order('created_at', ascending: false)
+            .limit(limit);
+
+        if (data.isNotEmpty) {
+          return data.map((item) => CreatorEarningEntry.fromMap(item)).toList();
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] fetchCreatorEarnings error: $e');
+      }
+    }
+
+    return [];
+  }
+
+  /// Fetch active platform commission rule (Default: 70% Creator / 30% Platform)
+  Future<CommissionRule> fetchActiveCommissionRule() async {
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('commission_rules')
+            .select()
+            .eq('is_active', true)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
+        if (data != null) {
+          return CommissionRule.fromMap(data);
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] fetchActiveCommissionRule error: $e');
+      }
+    }
+
+    return CommissionRule.standardDefault;
   }
 
   /// Update coins in-memory and broadcast immediately to all listeners
