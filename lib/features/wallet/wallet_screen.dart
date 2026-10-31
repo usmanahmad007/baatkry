@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/coin_package.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
+import '../creator/creator_status_modal.dart';
 import '../moderation/age_consent_modal.dart';
 import 'widgets/coin_package_card.dart';
 import 'widgets/transaction_tile.dart';
@@ -219,6 +220,14 @@ class _WalletScreenState extends ConsumerState<WalletScreen> with SingleTickerPr
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => CreatorStatusModal.show(context),
+            icon: const Icon(Icons.stars_rounded, color: AppColors.coinGold, size: 18),
+            label: const Text('Creator', style: TextStyle(color: AppColors.coinGold, fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -349,6 +358,38 @@ class _WalletScreenState extends ConsumerState<WalletScreen> with SingleTickerPr
                   ),
                 ),
               ),
+
+            // Creator Studio Promo Banner
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: InkWell(
+                onTap: () => CreatorStatusModal.show(context),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppColors.brandIndigo.withOpacity(0.25), AppColors.brandPink.withOpacity(0.15)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.brandPink.withOpacity(0.35)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Text('🌟', style: TextStyle(fontSize: 18)),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Creator Studio: Earn 70% cash on virtual gifts',
+                          style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Icon(Icons.arrow_forward_ios_rounded, color: AppColors.coinGold, size: 12),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
             // Tab Bar: Buy Packages vs Transaction History
             Container(

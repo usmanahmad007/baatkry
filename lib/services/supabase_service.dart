@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
 import '../models/coin_package.dart';
+import '../models/creator_application.dart';
+import '../models/creator_profile.dart';
 import '../models/user_profile.dart';
 import '../models/virtual_gift.dart';
 import '../models/wallet.dart';
@@ -1080,6 +1082,177 @@ class SupabaseService {
       'coins_balance': newBalance,
       'gift': gift.name,
       'creator_earned_usd': 0.0,
+    };
+  }
+
+  // ===========================================================================
+  // CREATOR APPLICATION & KYC METHODS (Phase 5)
+  // ===========================================================================
+
+  /// Fetch latest creator application for current user
+  Future<CreatorApplication?> fetchMyCreatorApplication() async {
+    final userId = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (userId == null) return null;
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('creator_applications')
+            .select()
+            .eq('user_id', userId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        if (data.isNotEmpty) {
+          return CreatorApplication.fromMap(data.first);
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] fetchMyCreatorApplication error: $e');
+      }
+    }
+
+    // Local / offline fallback
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString('local_creator_app_$userId');
+    if (jsonStr != null) {
+      try {
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        return CreatorApplication.fromMap(map);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// Submit a new Creator application
+  Future<CreatorApplication> submitCreatorApplication({
+    required String fullName,
+    required DateTime dateOfBirth,
+    required String country,
+    required IdDocumentType idDocumentType,
+    required String idDocumentFrontUrl,
+    String? idDocumentBackUrl,
+    required String selfieUrl,
+    Map<String, dynamic> socialMediaLinks = const {},
+    String? bio,
+  }) async {
+    if (_currentProfile == null || _currentProfile!.isAnonymous) {
+      throw Exception('Sign in with Google is required to apply as a Creator.');
+    }
+
+    final userId = _currentProfile!.id;
+    final now = DateTime.now();
+
+    final app = CreatorApplication(
+      id: const Uuid().v4(),
+      userId: userId,
+      fullName: fullName,
+      dateOfBirth: dateOfBirth,
+      country: country,
+      idDocumentType: idDocumentType,
+      idDocumentFrontUrl: idDocumentFrontUrl,
+      idDocumentBackUrl: idDocumentBackUrl,
+      selfieUrl: selfieUrl,
+      socialMediaLinks: socialMediaLinks,
+      bio: bio,
+      status: CreatorApplicationStatus.pending,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('creator_applications')
+            .insert(app.toMap())
+            .select()
+            .single();
+
+        return CreatorApplication.fromMap(data);
+      } catch (e) {
+        debugPrint('[SupabaseService] submitCreatorApplication error: $e');
+      }
+    }
+
+    // Local offline save
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('local_creator_app_$userId', jsonEncode(app.toMap()));
+    return app;
+  }
+
+  /// Check whether a user is an approved creator
+  Future<bool> checkIsCreator([String? userId]) async {
+    final uid = userId ?? _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) return false;
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', uid)
+            .eq('role', 'creator')
+            .maybeSingle();
+
+        if (data != null) return true;
+      } catch (e) {
+        debugPrint('[SupabaseService] checkIsCreator error: $e');
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('local_is_creator_$uid') ?? false;
+  }
+
+  /// Fetch public creator profile
+  Future<CreatorProfile?> fetchCreatorProfile(String creatorId) async {
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('creator_profiles')
+            .select()
+            .eq('id', creatorId)
+            .maybeSingle();
+
+        if (data != null) {
+          return CreatorProfile.fromMap(data);
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] fetchCreatorProfile error: $e');
+      }
+    }
+    return null;
+  }
+
+  /// Administrative review of a creator application
+  Future<Map<String, dynamic>> adminReviewCreatorApplication({
+    required String applicationId,
+    required String action, // 'approve' or 'reject'
+    String? rejectionReason,
+  }) async {
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final res = await _client!.rpc(
+          'admin_review_creator_application',
+          params: {
+            'p_application_id': applicationId,
+            'p_action': action,
+            'p_rejection_reason': rejectionReason,
+          },
+        );
+        if (res is Map) {
+          return Map<String, dynamic>.from(res);
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] admin_review_creator_application RPC note: $e');
+        rethrow;
+      }
+    }
+
+    // Local fallback for offline/testing
+    return {
+      'success': true,
+      'application_id': applicationId,
+      'status': action == 'approve' ? 'approved' : 'rejected',
     };
   }
 

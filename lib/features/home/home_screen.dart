@@ -13,6 +13,7 @@ import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
+import '../creator/creator_status_modal.dart';
 import '../matchmaking/radar_screen.dart';
 import '../moderation/age_consent_modal.dart';
 import '../moderation/eula_modal.dart';
@@ -908,6 +909,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   icon: Icons.shield_rounded,
                   label: 'Safety Lab',
                   onTap: () => EulaModal.checkAndShow(context, onAccepted: () {}),
+                ),
+                _buildNavPill(
+                  icon: Icons.stars_rounded,
+                  label: 'Creator Studio',
+                  accentColor: AppColors.brandPink,
+                  onTap: () => CreatorStatusModal.show(context),
                 ),
                 _buildNavPill(
                   icon: Icons.account_balance_wallet_rounded,
