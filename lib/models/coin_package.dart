@@ -26,6 +26,7 @@ class CoinPackage {
   });
 
   String get name => title;
+  String get formattedPrice => '\$${priceUsd.toStringAsFixed(2)}';
 
   Map<String, dynamic> toMap() {
     return {

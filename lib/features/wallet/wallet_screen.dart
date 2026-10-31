@@ -4,6 +4,7 @@ import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/coin_package.dart';
 import '../../services/supabase_service.dart';
+import '../admin/admin_dashboard_screen.dart';
 import '../auth/auth_modal.dart';
 import '../creator/creator_status_modal.dart';
 import '../moderation/age_consent_modal.dart';
@@ -390,6 +391,37 @@ class _WalletScreenState extends ConsumerState<WalletScreen> with SingleTickerPr
                 ),
               ),
             ),
+
+            // Admin Console Banner (if administrator)
+            if (ref.watch(isAdminProvider).value == true)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: InkWell(
+                  onTap: () => AdminDashboardScreen.show(context),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1F1226),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.brandPink.withOpacity(0.6)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.admin_panel_settings_rounded, color: AppColors.brandPink, size: 20),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Administrator Backoffice & Financial Dashboard',
+                            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios_rounded, color: AppColors.brandPink, size: 12),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
 
             // Tab Bar: Buy Packages vs Transaction History
             Container(

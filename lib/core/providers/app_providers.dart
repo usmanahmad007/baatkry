@@ -6,3 +6,4 @@ export 'user_provider.dart';
 export 'wallet_provider.dart';
 export 'gift_provider.dart';
 export 'creator_provider.dart';
+export 'admin_provider.dart';

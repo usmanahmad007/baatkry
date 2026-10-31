@@ -23,6 +23,11 @@ class CommissionRule {
 
   String get creatorPercentString => '${(creatorPercentage * 100).toStringAsFixed(0)}%';
   String get platformPercentString => '${(platformPercentage * 100).toStringAsFixed(0)}%';
+  double get creatorSharePercentage => creatorPercentage * 100;
+  double get platformSharePercentage => platformPercentage * 100;
+  double get minimumWithdrawalAmountUsd => minWithdrawalUsd;
+  double get coinConversionRateUsd => coinToUsdRate;
+  String get formattedMinWithdrawal => '\$${minWithdrawalUsd.toStringAsFixed(2)}';
 
   double coinsToUsd(int coins) => coins * coinToUsdRate;
 

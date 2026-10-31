@@ -12,6 +12,7 @@ import '../../models/user_profile.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
 import '../../services/supabase_service.dart';
+import '../admin/admin_dashboard_screen.dart';
 import '../auth/auth_modal.dart';
 import '../creator/creator_status_modal.dart';
 import '../matchmaking/radar_screen.dart';
@@ -910,6 +911,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   label: 'Safety Lab',
                   onTap: () => EulaModal.checkAndShow(context, onAccepted: () {}),
                 ),
+                if (ref.watch(isAdminProvider).value == true)
+                  _buildNavPill(
+                    icon: Icons.admin_panel_settings_rounded,
+                    label: 'Admin Console',
+                    accentColor: AppColors.brandPink,
+                    onTap: () => AdminDashboardScreen.show(context),
+                  ),
                 _buildNavPill(
                   icon: Icons.stars_rounded,
                   label: 'Creator Studio',

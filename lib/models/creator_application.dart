@@ -124,6 +124,10 @@ class CreatorApplication {
     return a;
   }
 
+  int get ageYears => age;
+  IdDocumentType get idType => idDocumentType;
+  Map<String, dynamic> get socialLinks => socialMediaLinks;
+
   factory CreatorApplication.fromMap(Map<String, dynamic> map) {
     return CreatorApplication(
       id: map['id'] as String? ?? '',
