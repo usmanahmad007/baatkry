@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/app_providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../services/presence_service.dart';
 
-class GlobalLiveMapWidget extends StatefulWidget {
+class GlobalLiveMapWidget extends ConsumerStatefulWidget {
   final String selectedCountry;
   final String selectedCountryCode;
   final String selectedCountryFlag;
@@ -19,12 +19,11 @@ class GlobalLiveMapWidget extends StatefulWidget {
   });
 
   @override
-  State<GlobalLiveMapWidget> createState() => _GlobalLiveMapWidgetState();
+  ConsumerState<GlobalLiveMapWidget> createState() => _GlobalLiveMapWidgetState();
 }
 
-class _GlobalLiveMapWidgetState extends State<GlobalLiveMapWidget> with SingleTickerProviderStateMixin {
+class _GlobalLiveMapWidgetState extends ConsumerState<GlobalLiveMapWidget> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
-  StreamSubscription<int>? _presenceSub;
 
   @override
   void initState() {
@@ -33,20 +32,15 @@ class _GlobalLiveMapWidgetState extends State<GlobalLiveMapWidget> with SingleTi
       vsync: this,
       duration: const Duration(seconds: 3),
     )..repeat();
-
-    _presenceSub = PresenceService.instance.liveUsersCountStream.listen((_) {
-      if (mounted) setState(() {});
-    });
   }
 
   @override
   void dispose() {
-    _presenceSub?.cancel();
     _animController.dispose();
     super.dispose();
   }
 
-  int get totalLiveCount => PresenceService.instance.totalLiveUsersCount;
+  int get totalLiveCount => ref.watch(currentLiveUsersCountProvider);
 
   @override
   Widget build(BuildContext context) {

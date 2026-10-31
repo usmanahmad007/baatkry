@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/coin_package.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
 import '../moderation/age_consent_modal.dart';
 
-class ShopModal extends StatefulWidget {
+class ShopModal extends ConsumerStatefulWidget {
   const ShopModal({super.key});
 
   static Future<void> show(BuildContext context) {
@@ -18,10 +20,10 @@ class ShopModal extends StatefulWidget {
   }
 
   @override
-  State<ShopModal> createState() => _ShopModalState();
+  ConsumerState<ShopModal> createState() => _ShopModalState();
 }
 
-class _ShopModalState extends State<ShopModal> {
+class _ShopModalState extends ConsumerState<ShopModal> {
   bool _isProcessing = false;
 
   void _onPackageSelected(CoinPackage package) async {
@@ -33,7 +35,7 @@ class _ShopModalState extends State<ShopModal> {
       return;
     }
 
-    final isGuest = SupabaseService.instance.isGuest;
+    final isGuest = ref.read(isGuestProvider);
 
     // Login is strictly required to make purchases
     if (isGuest) {
@@ -191,8 +193,8 @@ class _ShopModalState extends State<ShopModal> {
 
   @override
   Widget build(BuildContext context) {
-    final currentProfile = SupabaseService.instance.currentProfile;
-    final isGuest = currentProfile?.isAnonymous ?? true;
+    final userCoins = ref.watch(userCoinsProvider);
+    final isGuest = ref.watch(isGuestProvider);
 
     return Container(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.90),
@@ -250,7 +252,7 @@ class _ShopModalState extends State<ShopModal> {
                     const Icon(Icons.circle, color: AppColors.coinGold, size: 10),
                     const SizedBox(width: 6),
                     Text(
-                      '${currentProfile?.coins ?? 0} Coins',
+                      '$userCoins Coins',
                       style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.coinGold, fontSize: 13),
                     ),
                   ],

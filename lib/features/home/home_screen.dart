@@ -1,16 +1,16 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/user_profile.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
-import '../../services/presence_service.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
 import '../matchmaking/radar_screen.dart';
@@ -20,14 +20,14 @@ import '../shop/shop_modal.dart';
 import 'widgets/country_picker_modal.dart';
 import 'widgets/full_screen_live_map_background.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProviderStateMixin {
   // Gender filters: 'everyone', 'men', 'women', 'transgender'
   String _selectedGenderFilter = 'everyone';
   // User's own gender: 'men', 'women', 'transgender', 'unspecified'
@@ -38,12 +38,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   String _selectedCountryFlag = '🌍';
 
   LocalVideoTrack? _previewTrack;
-  StreamSubscription<UserProfile?>? _profileSub;
   UserProfile? _profile;
 
   // Real-time live online users counter for start screen display
   late AnimationController _livePulseController;
-  StreamSubscription<int>? _presenceSub;
 
   @override
   void initState() {
@@ -64,24 +62,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       duration: const Duration(seconds: 3),
     )..repeat();
 
-    _presenceSub = PresenceService.instance.liveUsersCountStream.listen((_) {
-      if (mounted) setState(() {});
-    });
-
-    _profileSub = SupabaseService.instance.profileStream.listen((p) {
-      if (mounted) {
-        setState(() {
-          _profile = p;
-          _myGender = p?.gender ?? 'unspecified';
-          if (_selectedCountryCode == 'ALL') {
-            _selectedCountry = 'Global (Worldwide)';
-            _selectedCountryCode = 'ALL';
-            _selectedCountryFlag = '🌍';
-          }
-        });
-      }
-    });
-
     // Check only if previously blocked as underage (no popups on website load)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final isBlocked = await AgeConsentModal.isBlockedUnderage();
@@ -93,14 +73,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
-    _profileSub?.cancel();
-    _presenceSub?.cancel();
     _livePulseController.dispose();
     LiveKitService.instance.stopLocalPreview();
     super.dispose();
   }
 
-  int get totalLiveUsersCount => PresenceService.instance.totalLiveUsersCount;
+  int get totalLiveUsersCount => ref.read(currentLiveUsersCountProvider);
 
   void _onStartMatching() {
     // 1. Consent & Verification Gate: Prompt user to verify 18+ and grant camera & mic
@@ -683,6 +661,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    _profile = ref.watch(currentProfileProvider);
     final isGuest = _profile?.isAnonymous ?? true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -941,9 +920,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     }
                   },
                 ),
-                ValueListenableBuilder<ThemeMode>(
-                  valueListenable: AppTheme.themeModeNotifier,
-                  builder: (context, mode, _) {
+                Builder(
+                  builder: (context) {
+                    final mode = ref.watch(themeModeProvider);
                     final icon = mode == ThemeMode.system
                         ? Icons.brightness_auto_rounded
                         : (mode == ThemeMode.dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded);
@@ -953,7 +932,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     return _buildNavPill(
                       icon: icon,
                       label: label,
-                      onTap: () => AppTheme.cycleThemeMode(),
+                      onTap: () => ref.read(themeModeProvider.notifier).toggleTheme(),
                     );
                   },
                 ),

@@ -97,6 +97,24 @@ class MatchmakingService {
     final myIsWorldwide = isWorldwide(countryFilter);
     final effectiveCountryFilter = myIsWorldwide ? 'Global (Worldwide)' : countryFilter;
 
+    // Immediately arm search timeout timer so it ticks from search initiation
+    _searchTimeoutTimer?.cancel();
+    if (!myIsWorldwide) {
+      _searchTimeoutTimer = Timer(countrySearchTimeout, () {
+        if (_status == MatchmakingStatus.searching) {
+          _status = MatchmakingStatus.noUsersInCountry;
+          _statusController.add(_status);
+        }
+      });
+    } else {
+      _searchTimeoutTimer = Timer(globalSearchTimeout, () {
+        if (_status == MatchmakingStatus.searching) {
+          _status = MatchmakingStatus.noUsersOnline;
+          _statusController.add(_status);
+        }
+      });
+    }
+
     // Generate unique participant session ID for this search session
     // Guarantees independent presence state even if multiple devices are logged into the same account!
     final clientSessionId = 'sess_${const Uuid().v4().replaceAll('-', '').substring(0, 16)}';
@@ -110,8 +128,8 @@ class MatchmakingService {
           final old = _channel;
           _channel = null;
           try {
-            await old?.untrack();
-            await client.removeChannel(old!);
+            old?.untrack();
+            client.removeChannel(old!);
           } catch (_) {}
         }
 
@@ -193,44 +211,10 @@ class MatchmakingService {
           }
         });
 
-        _searchTimeoutTimer?.cancel();
-        if (!myIsWorldwide) {
-          _searchTimeoutTimer = Timer(countrySearchTimeout, () {
-            if (_status == MatchmakingStatus.searching) {
-              _status = MatchmakingStatus.noUsersInCountry;
-              _statusController.add(_status);
-            }
-          });
-        } else {
-          _searchTimeoutTimer = Timer(globalSearchTimeout, () {
-            if (_status == MatchmakingStatus.searching) {
-              _status = MatchmakingStatus.noUsersOnline;
-              _statusController.add(_status);
-            }
-          });
-        }
         return;
       } catch (e) {
         debugPrint('[MatchmakingService] Realtime queue note: $e.');
       }
-    }
-
-    // Fallback: Realtime searching queue when server is offline or initializing
-    _searchTimeoutTimer?.cancel();
-    if (!myIsWorldwide) {
-      _searchTimeoutTimer = Timer(countrySearchTimeout, () {
-        if (_status == MatchmakingStatus.searching) {
-          _status = MatchmakingStatus.noUsersInCountry;
-          _statusController.add(_status);
-        }
-      });
-    } else {
-      _searchTimeoutTimer = Timer(globalSearchTimeout, () {
-        if (_status == MatchmakingStatus.searching) {
-          _status = MatchmakingStatus.noUsersOnline;
-          _statusController.add(_status);
-        }
-      });
     }
   }
 

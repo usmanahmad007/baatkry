@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/app_config.dart';
+import 'core/providers/app_providers.dart';
 import 'core/theme/app_theme.dart';
 import 'features/home/home_screen.dart';
 import 'services/guest_session_service.dart';
@@ -33,23 +34,20 @@ void main() async {
   );
 }
 
-class BaatkryApp extends StatelessWidget {
+class BaatkryApp extends ConsumerWidget {
   const BaatkryApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AppTheme.themeModeNotifier,
-      builder: (context, themeMode, _) {
-        return MaterialApp(
-          title: 'Baatkry - Live Video Chat',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: themeMode,
-          home: const HomeScreen(),
-        );
-      },
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+
+    return MaterialApp(
+      title: 'Baatkry - Live Video Chat',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
+      home: const HomeScreen(),
     );
   }
 }

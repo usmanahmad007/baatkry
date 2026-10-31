@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/chat_message.dart';
 import '../../models/user_profile.dart';
@@ -19,7 +21,7 @@ import '../moderation/report_modal.dart';
 import '../shop/shop_modal.dart';
 import '../../models/country.dart';
 
-class VideoCallScreen extends StatefulWidget {
+class VideoCallScreen extends ConsumerStatefulWidget {
   final MatchResult matchResult;
   final UserProfile myProfile;
   final String genderFilter;
@@ -34,10 +36,10 @@ class VideoCallScreen extends StatefulWidget {
   });
 
   @override
-  State<VideoCallScreen> createState() => _VideoCallScreenState();
+  ConsumerState<VideoCallScreen> createState() => _VideoCallScreenState();
 }
 
-class _VideoCallScreenState extends State<VideoCallScreen> {
+class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   final LiveKitService _liveKit = LiveKitService.instance;
   final List<ChatMessage> _messages = [];
   final TextEditingController _textController = TextEditingController();
@@ -1153,6 +1155,16 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Listen to real-time profile updates via Riverpod (e.g. coin purchases in ShopModal)
+    ref.listen<AsyncValue<UserProfile?>>(userProfileProvider, (previous, next) {
+      final p = next.valueOrNull;
+      if (mounted && p != null && p.coins > _coinsRemaining) {
+        setState(() {
+          _coinsRemaining = p.coins;
+        });
+      }
+    });
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Focus(

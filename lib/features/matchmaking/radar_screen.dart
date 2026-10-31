@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/country.dart';
 import '../../models/user_profile.dart';
@@ -8,7 +9,7 @@ import '../../services/supabase_service.dart';
 import '../call/video_call_screen.dart';
 import '../home/widgets/country_picker_modal.dart';
 
-class RadarScreen extends StatefulWidget {
+class RadarScreen extends ConsumerStatefulWidget {
   final UserProfile profile;
   final String genderFilter;
   final String countryFilter;
@@ -21,10 +22,10 @@ class RadarScreen extends StatefulWidget {
   });
 
   @override
-  State<RadarScreen> createState() => _RadarScreenState();
+  ConsumerState<RadarScreen> createState() => _RadarScreenState();
 }
 
-class _RadarScreenState extends State<RadarScreen> with SingleTickerProviderStateMixin {
+class _RadarScreenState extends ConsumerState<RadarScreen> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   StreamSubscription<MatchResult>? _matchSub;
   StreamSubscription<MatchmakingStatus>? _statusSub;

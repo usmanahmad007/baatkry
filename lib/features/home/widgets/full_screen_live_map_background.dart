@@ -1,21 +1,20 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/app_providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../services/presence_service.dart';
 import '../../../services/supabase_service.dart';
 
-class FullScreenLiveUsersMapBackground extends StatefulWidget {
+class FullScreenLiveUsersMapBackground extends ConsumerStatefulWidget {
   const FullScreenLiveUsersMapBackground({super.key});
 
   @override
-  State<FullScreenLiveUsersMapBackground> createState() => _FullScreenLiveUsersMapBackgroundState();
+  ConsumerState<FullScreenLiveUsersMapBackground> createState() => _FullScreenLiveUsersMapBackgroundState();
 }
 
-class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMapBackground>
+class _FullScreenLiveUsersMapBackgroundState extends ConsumerState<FullScreenLiveUsersMapBackground>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
-  StreamSubscription<Map<String, int>>? _presenceSub;
 
   @override
   void initState() {
@@ -24,15 +23,10 @@ class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMa
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
-
-    _presenceSub = PresenceService.instance.countryCountsStream.listen((_) {
-      if (mounted) setState(() {});
-    });
   }
 
   @override
   void dispose() {
-    _presenceSub?.cancel();
     _animController.dispose();
     super.dispose();
   }
@@ -40,7 +34,7 @@ class _FullScreenLiveUsersMapBackgroundState extends State<FullScreenLiveUsersMa
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final countryCounts = PresenceService.instance.countryCounts;
+    final countryCounts = ref.watch(currentCountryCountsProvider);
 
     return RepaintBoundary(
       child: AnimatedBuilder(

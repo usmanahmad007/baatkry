@@ -1,11 +1,12 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/user_profile.dart';
 import '../../services/supabase_service.dart';
 import '../moderation/age_consent_modal.dart';
 
-class AuthModal extends StatefulWidget {
+class AuthModal extends ConsumerStatefulWidget {
   final VoidCallback? onAuthSuccess;
 
   const AuthModal({super.key, this.onAuthSuccess});
@@ -20,31 +21,12 @@ class AuthModal extends StatefulWidget {
   }
 
   @override
-  State<AuthModal> createState() => _AuthModalState();
+  ConsumerState<AuthModal> createState() => _AuthModalState();
 }
 
-class _AuthModalState extends State<AuthModal> {
+class _AuthModalState extends ConsumerState<AuthModal> {
   bool _isLoading = false;
   String? _errorMessage;
-  StreamSubscription<UserProfile?>? _profileSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    // Auto-dismiss modal when Google OAuth returns a signed-in profile
-    _profileSubscription = SupabaseService.instance.profileStream.listen((profile) {
-      if (profile != null && !profile.isAnonymous && mounted) {
-        Navigator.of(context).pop();
-        widget.onAuthSuccess?.call();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _profileSubscription?.cancel();
-    super.dispose();
-  }
 
   Future<void> _handleGoogleSignIn() async {
     final isBlocked = await AgeConsentModal.isBlockedUnderage();
@@ -131,6 +113,15 @@ class _AuthModalState extends State<AuthModal> {
 
   @override
   Widget build(BuildContext context) {
+    // Auto-dismiss modal when Google OAuth returns a signed-in profile via Riverpod
+    ref.listen<AsyncValue<UserProfile?>>(userProfileProvider, (prev, next) {
+      final profile = next.valueOrNull;
+      if (profile != null && !profile.isAnonymous && mounted) {
+        Navigator.of(context).pop();
+        widget.onAuthSuccess?.call();
+      }
+    });
+
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 34),
       decoration: BoxDecoration(
