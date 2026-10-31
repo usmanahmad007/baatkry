@@ -2,6 +2,7 @@
 -- BAATKRY PLATFORM - COMPLETE MONETIZATION & CREATOR EARNING SYSTEM MIGRATION
 -- Migration: 20261101000000_monetization_system.sql
 -- Compatible with Supabase PostgreSQL (Standard & Enterprise)
+-- 100% Idempotent - Safe to run multiple times
 -- ==============================================================================
 
 -- 0. Ensure Required Extensions
@@ -49,10 +50,12 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
 -- RLS for user_roles
+DROP POLICY IF EXISTS "Users can view their own roles" ON public.user_roles;
 CREATE POLICY "Users can view their own roles"
     ON public.user_roles FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Only admins can manage roles" ON public.user_roles;
 CREATE POLICY "Only admins can manage roles"
     ON public.user_roles FOR ALL
     USING (public.is_admin(auth.uid()))
@@ -77,10 +80,12 @@ CREATE TABLE IF NOT EXISTS public.creator_profiles (
 
 ALTER TABLE public.creator_profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public can view verified or active creator profiles" ON public.creator_profiles;
 CREATE POLICY "Public can view verified or active creator profiles"
     ON public.creator_profiles FOR SELECT
     USING (true);
 
+DROP POLICY IF EXISTS "Creators can update their own profile bio and links" ON public.creator_profiles;
 CREATE POLICY "Creators can update their own profile bio and links"
     ON public.creator_profiles FOR UPDATE
     USING (auth.uid() = id)
@@ -112,14 +117,17 @@ CREATE INDEX IF NOT EXISTS idx_creator_applications_status ON public.creator_app
 
 ALTER TABLE public.creator_applications ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own creator applications" ON public.creator_applications;
 CREATE POLICY "Users can view their own creator applications"
     ON public.creator_applications FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Users can submit creator applications" ON public.creator_applications;
 CREATE POLICY "Users can submit creator applications"
     ON public.creator_applications FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can update creator applications" ON public.creator_applications;
 CREATE POLICY "Admins can update creator applications"
     ON public.creator_applications FOR UPDATE
     USING (public.is_admin(auth.uid()))
@@ -139,6 +147,7 @@ CREATE TABLE IF NOT EXISTS public.creator_verifications (
 
 ALTER TABLE public.creator_verifications ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Creators and admins can view verifications" ON public.creator_verifications;
 CREATE POLICY "Creators and admins can view verifications"
     ON public.creator_verifications FOR SELECT
     USING (auth.uid() = creator_id OR public.is_admin(auth.uid()));
@@ -163,6 +172,7 @@ CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON public.wallets(user_id);
 
 ALTER TABLE public.wallets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own wallet" ON public.wallets;
 CREATE POLICY "Users can view their own wallet"
     ON public.wallets FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
@@ -187,10 +197,12 @@ CREATE TABLE IF NOT EXISTS public.coin_packages (
 
 ALTER TABLE public.coin_packages ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can view active coin packages" ON public.coin_packages;
 CREATE POLICY "Anyone can view active coin packages"
     ON public.coin_packages FOR SELECT
     USING (is_active = true OR public.is_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Only admins can manage coin packages" ON public.coin_packages;
 CREATE POLICY "Only admins can manage coin packages"
     ON public.coin_packages FOR ALL
     USING (public.is_admin(auth.uid()))
@@ -218,12 +230,12 @@ CREATE INDEX IF NOT EXISTS idx_coin_purchases_idempotency ON public.coin_purchas
 
 ALTER TABLE public.coin_purchases ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own purchases" ON public.coin_purchases;
 CREATE POLICY "Users can view their own purchases"
     ON public.coin_purchases FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
 
 -- 2.4 Immutable Coin Transaction Ledger
--- Extends the existing coin_transactions concept with explicit financial accounting
 CREATE TABLE IF NOT EXISTS public.wallet_ledger (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wallet_id UUID NOT NULL REFERENCES public.wallets(id) ON DELETE CASCADE,
@@ -243,6 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_wallet_ledger_idempotency ON public.wallet_ledger
 
 ALTER TABLE public.wallet_ledger ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own wallet ledger" ON public.wallet_ledger;
 CREATE POLICY "Users can view their own wallet ledger"
     ON public.wallet_ledger FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
@@ -263,10 +276,12 @@ CREATE TABLE IF NOT EXISTS public.gifts (
 
 ALTER TABLE public.gifts ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can view active gifts" ON public.gifts;
 CREATE POLICY "Anyone can view active gifts"
     ON public.gifts FOR SELECT
     USING (is_active = true OR public.is_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Only admins can manage gifts" ON public.gifts;
 CREATE POLICY "Only admins can manage gifts"
     ON public.gifts FOR ALL
     USING (public.is_admin(auth.uid()))
@@ -295,6 +310,7 @@ CREATE INDEX IF NOT EXISTS idx_gift_transactions_idempotency ON public.gift_tran
 
 ALTER TABLE public.gift_transactions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Participants can view their sent and received gifts" ON public.gift_transactions;
 CREATE POLICY "Participants can view their sent and received gifts"
     ON public.gift_transactions FOR SELECT
     USING (auth.uid() = sender_id OR auth.uid() = receiver_id OR public.is_admin(auth.uid()));
@@ -319,10 +335,12 @@ CREATE TABLE IF NOT EXISTS public.commission_rules (
 
 ALTER TABLE public.commission_rules ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can view active commission rules" ON public.commission_rules;
 CREATE POLICY "Anyone can view active commission rules"
     ON public.commission_rules FOR SELECT
     USING (is_active = true OR public.is_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Only admins can edit commission rules" ON public.commission_rules;
 CREATE POLICY "Only admins can edit commission rules"
     ON public.commission_rules FOR ALL
     USING (public.is_admin(auth.uid()))
@@ -345,6 +363,7 @@ CREATE INDEX IF NOT EXISTS idx_creator_wallets_creator ON public.creator_wallets
 
 ALTER TABLE public.creator_wallets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Creators can view their own financial earnings wallet" ON public.creator_wallets;
 CREATE POLICY "Creators can view their own financial earnings wallet"
     ON public.creator_wallets FOR SELECT
     USING (auth.uid() = creator_id OR public.is_admin(auth.uid()));
@@ -366,6 +385,7 @@ CREATE INDEX IF NOT EXISTS idx_creator_earnings_gift_tx ON public.creator_earnin
 
 ALTER TABLE public.creator_earnings ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Creators can view their earnings records" ON public.creator_earnings;
 CREATE POLICY "Creators can view their earnings records"
     ON public.creator_earnings FOR SELECT
     USING (auth.uid() = creator_id OR public.is_admin(auth.uid()));
@@ -389,6 +409,7 @@ CREATE INDEX IF NOT EXISTS idx_payout_accounts_creator ON public.payout_accounts
 
 ALTER TABLE public.payout_accounts ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Creators can manage their own payout accounts" ON public.payout_accounts;
 CREATE POLICY "Creators can manage their own payout accounts"
     ON public.payout_accounts FOR ALL
     USING (auth.uid() = creator_id OR public.is_admin(auth.uid()))
@@ -418,10 +439,12 @@ CREATE INDEX IF NOT EXISTS idx_creator_withdrawals_status ON public.creator_with
 
 ALTER TABLE public.creator_withdrawals ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Creators can view their withdrawal history" ON public.creator_withdrawals;
 CREATE POLICY "Creators can view their withdrawal history"
     ON public.creator_withdrawals FOR SELECT
     USING (auth.uid() = creator_id OR public.is_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Only admins can update withdrawal status" ON public.creator_withdrawals;
 CREATE POLICY "Only admins can update withdrawal status"
     ON public.creator_withdrawals FOR UPDATE
     USING (public.is_admin(auth.uid()))
@@ -449,6 +472,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_tx ON public.paymen
 
 ALTER TABLE public.payment_transactions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own payment transactions" ON public.payment_transactions;
 CREATE POLICY "Users can view their own payment transactions"
     ON public.payment_transactions FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
@@ -468,6 +492,7 @@ CREATE TABLE IF NOT EXISTS public.payment_webhooks (
 
 ALTER TABLE public.payment_webhooks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Only admins can view webhooks" ON public.payment_webhooks;
 CREATE POLICY "Only admins can view webhooks"
     ON public.payment_webhooks FOR SELECT
     USING (public.is_admin(auth.uid()));
@@ -488,6 +513,7 @@ CREATE TABLE IF NOT EXISTS public.refunds (
 
 ALTER TABLE public.refunds ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users and admins can view refunds" ON public.refunds;
 CREATE POLICY "Users and admins can view refunds"
     ON public.refunds FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
@@ -513,6 +539,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON public.admin_audit_log
 
 ALTER TABLE public.admin_audit_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Only admins can view audit logs" ON public.admin_audit_logs;
 CREATE POLICY "Only admins can view audit logs"
     ON public.admin_audit_logs FOR SELECT
     USING (public.is_admin(auth.uid()));
@@ -528,10 +555,12 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can view app settings" ON public.app_settings;
 CREATE POLICY "Anyone can view app settings"
     ON public.app_settings FOR SELECT
     USING (true);
 
+DROP POLICY IF EXISTS "Only admins can modify app settings" ON public.app_settings;
 CREATE POLICY "Only admins can modify app settings"
     ON public.app_settings FOR ALL
     USING (public.is_admin(auth.uid()))
@@ -550,6 +579,7 @@ CREATE TABLE IF NOT EXISTS public.platform_transactions (
 
 ALTER TABLE public.platform_transactions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Only admins can view platform transactions" ON public.platform_transactions;
 CREATE POLICY "Only admins can view platform transactions"
     ON public.platform_transactions FOR SELECT
     USING (public.is_admin(auth.uid()));
@@ -569,6 +599,7 @@ CREATE TABLE IF NOT EXISTS public.support_tickets (
 
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view and create their own tickets" ON public.support_tickets;
 CREATE POLICY "Users can view and create their own tickets"
     ON public.support_tickets FOR ALL
     USING (auth.uid() = user_id OR public.is_admin(auth.uid()))
@@ -1034,7 +1065,7 @@ ON CONFLICT (id) DO UPDATE SET
     price_rs = EXCLUDED.price_rs,
     updated_at = NOW();
 
--- Also keep backward compatibility for existing Pakistani Rupee packages
+-- Backward compatibility for existing Pakistani Rupee packages
 INSERT INTO public.coin_packages (id, name, description, coins, price_usd, price_rs, badge, is_popular, sort_order)
 VALUES
     ('pack_500_rs', 'Starter Pack (PKR)', '60 Mins Gender-Filtered Video Chat (1 coin/sec)', 3600, 1.79, 500, 'MIN DEPOSIT', false, 6),
@@ -1091,27 +1122,27 @@ LEFT JOIN public.wallets w ON w.user_id = p.id
 WHERE w.id IS NULL
 ON CONFLICT (user_id) DO NOTHING;
 
--- 7.6 Realtime Publication: Add gifts, wallets, and creator earnings to Supabase Realtime
+-- 7.6 Realtime Publication: Add gifts, wallets, and creator earnings safely
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_publication_tables 
-        WHERE pubname = 'supabase_realtime' AND tablename = 'wallets'
-    ) THEN
+    BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.wallets;
-    END IF;
+    EXCEPTION
+        WHEN duplicate_object THEN NULL;
+        WHEN OTHERS THEN NULL;
+    END;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_publication_tables 
-        WHERE pubname = 'supabase_realtime' AND tablename = 'gift_transactions'
-    ) THEN
+    BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.gift_transactions;
-    END IF;
+    EXCEPTION
+        WHEN duplicate_object THEN NULL;
+        WHEN OTHERS THEN NULL;
+    END;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_publication_tables 
-        WHERE pubname = 'supabase_realtime' AND tablename = 'creator_wallets'
-    ) THEN
+    BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.creator_wallets;
-    END IF;
+    EXCEPTION
+        WHEN duplicate_object THEN NULL;
+        WHEN OTHERS THEN NULL;
+    END;
 END $$;
