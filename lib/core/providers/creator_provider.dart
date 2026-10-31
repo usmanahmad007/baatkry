@@ -4,6 +4,8 @@ import '../../models/creator_application.dart';
 import '../../models/creator_earning_entry.dart';
 import '../../models/creator_profile.dart';
 import '../../models/creator_wallet.dart';
+import '../../models/creator_withdrawal.dart';
+import '../../models/payout_account.dart';
 import '../../services/supabase_service.dart';
 import 'user_provider.dart';
 
@@ -49,5 +51,15 @@ final creatorEarningsProvider = FutureProvider<List<CreatorEarningEntry>>((ref) 
 /// Fetches active platform commission rules
 final activeCommissionRuleProvider = FutureProvider<CommissionRule>((ref) async {
   return SupabaseService.instance.fetchActiveCommissionRule();
+});
+
+/// Fetches creator's registered payout accounts (PayPal, Bank, Crypto, etc.)
+final creatorPayoutAccountsProvider = FutureProvider<List<PayoutAccount>>((ref) async {
+  return SupabaseService.instance.fetchCreatorPayoutAccounts();
+});
+
+/// Fetches creator's personal withdrawal payout history and live tracking status
+final creatorMyWithdrawalsProvider = FutureProvider<List<CreatorWithdrawal>>((ref) async {
+  return SupabaseService.instance.fetchCreatorMyWithdrawals();
 });
 

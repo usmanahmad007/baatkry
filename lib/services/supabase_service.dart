@@ -17,6 +17,7 @@ import '../models/creator_earning_entry.dart';
 import '../models/creator_profile.dart';
 import '../models/creator_wallet.dart';
 import '../models/creator_withdrawal.dart';
+import '../models/payout_account.dart';
 import '../models/user_profile.dart';
 import '../models/virtual_gift.dart';
 import '../models/wallet.dart';
@@ -1403,6 +1404,284 @@ class SupabaseService {
     }
 
     return CommissionRule.standardDefault;
+  }
+
+  // ===========================================================================
+  // CREATOR PAYOUT & WITHDRAWAL METHODS (Phase 8)
+  // ===========================================================================
+
+  /// Fetch creator's registered payout beneficiary accounts
+  Future<List<PayoutAccount>> fetchCreatorPayoutAccounts() async {
+    final uid = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) return [];
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('payout_accounts')
+            .select()
+            .eq('creator_id', uid)
+            .order('is_primary', ascending: false)
+            .order('created_at', ascending: false);
+
+        if (data.isNotEmpty) {
+          return data.map((item) => PayoutAccount.fromMap(item)).toList();
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] fetchCreatorPayoutAccounts error: $e');
+      }
+    }
+
+    // Local / Offline fallback
+    final prefs = await SharedPreferences.getInstance();
+    final rawList = prefs.getStringList('local_payout_accounts_$uid') ?? [];
+    if (rawList.isNotEmpty) {
+      return rawList.map((str) => PayoutAccount.fromMap(jsonDecode(str) as Map<String, dynamic>)).toList();
+    }
+    return [];
+  }
+
+  /// Register or update a payout beneficiary account
+  Future<PayoutAccount?> saveCreatorPayoutAccount({
+    required String payoutMethod,
+    required String accountTitle,
+    required String accountNumber,
+    String? bankName,
+    String? routingCode,
+    bool isPrimary = true,
+  }) async {
+    final uid = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) return null;
+
+    final newId = const Uuid().v4();
+    final now = DateTime.now();
+
+    final account = PayoutAccount(
+      id: newId,
+      creatorId: uid,
+      payoutMethod: payoutMethod,
+      accountTitle: accountTitle,
+      accountNumber: accountNumber,
+      bankName: bankName,
+      routingCode: routingCode,
+      isVerified: true,
+      isPrimary: isPrimary,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        if (isPrimary) {
+          // Demote existing primary accounts
+          await _client!
+              .from('payout_accounts')
+              .update({'is_primary': false})
+              .eq('creator_id', uid);
+        }
+
+        final res = await _client!.from('payout_accounts').insert(account.toMap()).select().single();
+        return PayoutAccount.fromMap(res);
+      } catch (e) {
+        debugPrint('[SupabaseService] saveCreatorPayoutAccount error: $e');
+      }
+    }
+
+    // Local / Offline fallback
+    final prefs = await SharedPreferences.getInstance();
+    final rawList = prefs.getStringList('local_payout_accounts_$uid') ?? [];
+    rawList.insert(0, jsonEncode(account.toMap()));
+    await prefs.setStringList('local_payout_accounts_$uid', rawList);
+    return account;
+  }
+
+  /// Request a creator withdrawal payout ($20.00 minimum threshold)
+  Future<Map<String, dynamic>> requestCreatorWithdrawal({
+    required String payoutAccountId,
+    required double amountUsd,
+    String? idempotencyKey,
+  }) async {
+    final uid = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) {
+      throw Exception('Creator must be authenticated to request withdrawals');
+    }
+
+    final key = idempotencyKey ?? 'wth_${const Uuid().v4()}';
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final res = await _client!.rpc(
+          'request_creator_withdrawal',
+          params: {
+            'p_payout_account_id': payoutAccountId,
+            'p_amount_usd': amountUsd,
+            'p_idempotency_key': key,
+          },
+        );
+
+        // Refresh creator wallet locally
+        await fetchCreatorWallet(uid);
+
+        if (res is Map) {
+          return Map<String, dynamic>.from(res);
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] request_creator_withdrawal RPC error: $e');
+        rethrow;
+      }
+    }
+
+    // Offline / Local Simulation
+    final currentAvail = _currentCreatorWallet?.availableEarningsUsd ?? 0.0;
+    if (currentAvail < amountUsd) {
+      throw Exception('Insufficient available balance (\$$currentAvail available, \$$amountUsd requested)');
+    }
+
+    final newAvail = (currentAvail - amountUsd).clamp(0.0, double.infinity);
+    final newWithdrawn = (_currentCreatorWallet?.withdrawnEarningsUsd ?? 0.0) + amountUsd;
+
+    final updatedWallet = _currentCreatorWallet?.copyWith(
+      availableEarningsUsd: newAvail,
+      withdrawnEarningsUsd: newWithdrawn,
+      updatedAt: DateTime.now(),
+    );
+
+    if (updatedWallet != null) {
+      _currentCreatorWallet = updatedWallet;
+      _creatorWalletController.add(updatedWallet);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('local_creator_avail_$uid', newAvail);
+      await prefs.setDouble('local_creator_withdrawn_$uid', newWithdrawn);
+
+      // Save local withdrawal record
+      final localTx = CreatorWithdrawal(
+        id: key,
+        creatorId: uid,
+        creatorName: _currentProfile?.nickname ?? 'Creator',
+        amountUsd: amountUsd,
+        feeUsd: 0.0,
+        netAmountUsd: amountUsd,
+        payoutMethod: 'paypal',
+        status: 'pending',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      final rawList = prefs.getStringList('local_my_withdrawals_$uid') ?? [];
+      rawList.insert(0, jsonEncode(localTx.toMap()));
+      await prefs.setStringList('local_my_withdrawals_$uid', rawList);
+    }
+
+    return {
+      'success': true,
+      'withdrawal_id': key,
+      'amount_usd': amountUsd,
+      'status': 'pending',
+      'remaining_available_usd': newAvail,
+    };
+  }
+
+  /// Self-cancel a pending withdrawal request and atomically restore funds
+  Future<Map<String, dynamic>> cancelCreatorWithdrawal(String withdrawalId) async {
+    final uid = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) {
+      throw Exception('Creator must be authenticated to cancel withdrawals');
+    }
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final res = await _client!.rpc(
+          'cancel_creator_withdrawal',
+          params: {'p_withdrawal_id': withdrawalId},
+        );
+
+        // Refresh creator wallet locally
+        await fetchCreatorWallet(uid);
+
+        if (res is Map) {
+          return Map<String, dynamic>.from(res);
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] cancel_creator_withdrawal RPC error: $e');
+        rethrow;
+      }
+    }
+
+    // Local / Offline Simulation
+    final prefs = await SharedPreferences.getInstance();
+    final rawList = prefs.getStringList('local_my_withdrawals_$uid') ?? [];
+    double restoredAmount = 0.0;
+    final updatedList = <String>[];
+
+    for (final raw in rawList) {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      if (map['id'] == withdrawalId) {
+        restoredAmount = (map['amount_usd'] as num?)?.toDouble() ?? 0.0;
+        map['status'] = 'cancelled';
+        map['updated_at'] = DateTime.now().toIso8601String();
+      }
+      updatedList.add(jsonEncode(map));
+    }
+    await prefs.setStringList('local_my_withdrawals_$uid', updatedList);
+
+    if (restoredAmount > 0) {
+      final newAvail = (_currentCreatorWallet?.availableEarningsUsd ?? 0.0) + restoredAmount;
+      final newWithdrawn = ((_currentCreatorWallet?.withdrawnEarningsUsd ?? 0.0) - restoredAmount).clamp(0.0, double.infinity);
+
+      final updatedWallet = _currentCreatorWallet?.copyWith(
+        availableEarningsUsd: newAvail,
+        withdrawnEarningsUsd: newWithdrawn,
+        updatedAt: DateTime.now(),
+      );
+      if (updatedWallet != null) {
+        _currentCreatorWallet = updatedWallet;
+        _creatorWalletController.add(updatedWallet);
+        await prefs.setDouble('local_creator_avail_$uid', newAvail);
+        await prefs.setDouble('local_creator_withdrawn_$uid', newWithdrawn);
+      }
+    }
+
+    return {
+      'success': true,
+      'withdrawal_id': withdrawalId,
+      'status': 'cancelled',
+      'restored_amount_usd': restoredAmount,
+    };
+  }
+
+  /// Fetch creator's personal withdrawal payout history
+  Future<List<CreatorWithdrawal>> fetchCreatorMyWithdrawals() async {
+    final uid = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (uid == null) return [];
+
+    if (_client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final data = await _client!
+            .from('creator_withdrawals')
+            .select('''
+              id, creator_id, amount_usd, fee_usd, net_payout_amount,
+              payout_currency, status, admin_notes,
+              payout_transaction_reference, reviewed_by, reviewed_at,
+              created_at, updated_at
+            ''')
+            .eq('creator_id', uid)
+            .order('created_at', ascending: false);
+
+        if (data.isNotEmpty) {
+          return data.map((item) => CreatorWithdrawal.fromMap(item)).toList();
+        }
+      } catch (e) {
+        debugPrint('[SupabaseService] fetchCreatorMyWithdrawals error: $e');
+      }
+    }
+
+    // Local / Offline fallback
+    final prefs = await SharedPreferences.getInstance();
+    final rawList = prefs.getStringList('local_my_withdrawals_$uid') ?? [];
+    if (rawList.isNotEmpty) {
+      return rawList.map((str) => CreatorWithdrawal.fromMap(jsonDecode(str) as Map<String, dynamic>)).toList();
+    }
+    return [];
   }
 
   /// Update coins in-memory and broadcast immediately to all listeners

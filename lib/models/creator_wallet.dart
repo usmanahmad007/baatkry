@@ -24,6 +24,13 @@ class CreatorWallet {
 
   double get totalEarningsUsd => availableEarningsUsd + pendingEarningsUsd;
 
+  bool canWithdraw([double minThreshold = 20.00]) => availableEarningsUsd >= minThreshold;
+
+  double progressToMinimum([double minThreshold = 20.00]) {
+    if (minThreshold <= 0) return 1.0;
+    return (availableEarningsUsd / minThreshold).clamp(0.0, 1.0);
+  }
+
   String get formattedAvailable => '\$${availableEarningsUsd.toStringAsFixed(2)}';
   String get formattedPending => '\$${pendingEarningsUsd.toStringAsFixed(2)}';
   String get formattedLifetime => '\$${lifetimeEarningsUsd.toStringAsFixed(2)}';

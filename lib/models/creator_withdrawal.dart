@@ -39,7 +39,27 @@ class CreatorWithdrawal {
   bool get isPending => status == 'pending' || status == 'under_review';
   bool get isApproved => status == 'approved' || status == 'processing';
   bool get isCompleted => status == 'completed';
+  bool get isCancelled => status == 'cancelled';
+  bool get isRejected => status == 'rejected' || status == 'failed';
   bool get isTerminal => status == 'completed' || status == 'rejected' || status == 'failed' || status == 'cancelled';
+  bool get canCancel => isPending;
+
+  int get timelineStep {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 0;
+      case 'under_review':
+        return 1;
+      case 'approved':
+        return 2;
+      case 'processing':
+        return 3;
+      case 'completed':
+        return 4;
+      default:
+        return -1;
+    }
+  }
 
   String get formattedAmount => '\$${amountUsd.toStringAsFixed(2)}';
   String get formattedNetAmount => '\$${netAmountUsd.toStringAsFixed(2)}';

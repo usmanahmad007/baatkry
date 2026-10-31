@@ -5,6 +5,8 @@ import '../../core/theme/app_theme.dart';
 import '../../models/creator_earning_entry.dart';
 import '../../models/creator_wallet.dart';
 import 'widgets/earning_tile.dart';
+import 'widgets/withdrawal_tracking_card.dart';
+import 'withdrawal_request_screen.dart';
 
 class CreatorDashboardScreen extends ConsumerStatefulWidget {
   const CreatorDashboardScreen({super.key});
@@ -21,6 +23,7 @@ class CreatorDashboardScreen extends ConsumerStatefulWidget {
 
 class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen> {
   String _selectedFilter = 'all'; // 'all', 'available', 'withdrawn'
+  bool _showingWithdrawalsTab = false;
 
   @override
   Widget build(BuildContext context) {
@@ -80,60 +83,146 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
                 _buildPolicyCard(rule),
                 const SizedBox(height: 18),
 
-                // 3. Itemized Earnings Header & Filters
+                // 3. Tab Switcher: Gift Earnings vs Payout Requests
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Gift Earnings History',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                    ChoiceChip(
+                      label: const Text('Gift Earnings'),
+                      selected: !_showingWithdrawalsTab,
+                      onSelected: (_) => setState(() => _showingWithdrawalsTab = false),
+                      selectedColor: AppColors.brandIndigo,
+                      backgroundColor: Colors.white10,
+                      labelStyle: TextStyle(
+                        color: !_showingWithdrawalsTab ? Colors.white : Colors.white70,
+                        fontWeight: !_showingWithdrawalsTab ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 12,
                       ),
                     ),
-                    Row(
-                      children: [
-                        _filterChip('All', 'all'),
-                        const SizedBox(width: 6),
-                        _filterChip('Available', 'available'),
-                        const SizedBox(width: 6),
-                        _filterChip('Withdrawn', 'withdrawn'),
-                      ],
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Payout Requests'),
+                      selected: _showingWithdrawalsTab,
+                      onSelected: (_) => setState(() => _showingWithdrawalsTab = true),
+                      selectedColor: AppColors.coinGold,
+                      backgroundColor: Colors.white10,
+                      labelStyle: TextStyle(
+                        color: _showingWithdrawalsTab ? Colors.black : Colors.white70,
+                        fontWeight: _showingWithdrawalsTab ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 12,
+                      ),
                     ),
+                    const Spacer(),
+                    if (!_showingWithdrawalsTab)
+                      Row(
+                        children: [
+                          _filterChip('All', 'all'),
+                          const SizedBox(width: 4),
+                          _filterChip('Avail', 'available'),
+                          const SizedBox(width: 4),
+                          _filterChip('Paid', 'withdrawn'),
+                        ],
+                      ),
                   ],
                 ),
                 const SizedBox(height: 12),
 
-                // 4. Itemized Earnings Ledger List
-                earningsAsync.when(
-                  data: (entries) {
-                    final filtered = _filterEntries(entries);
-                    if (filtered.isEmpty) {
-                      return _buildEmptyEarningsCard();
-                    }
-                    return ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        return EarningTile(entry: filtered[index]);
-                      },
-                    );
-                  },
-                  loading: () => const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32.0),
-                      child: CircularProgressIndicator(color: AppColors.brandIndigo),
+                // 4. Content view based on active tab
+                if (!_showingWithdrawalsTab) ...[
+                  earningsAsync.when(
+                    data: (entries) {
+                      final filtered = _filterEntries(entries);
+                      if (filtered.isEmpty) {
+                        return _buildEmptyEarningsCard();
+                      }
+                      return ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          return EarningTile(entry: filtered[index]);
+                        },
+                      );
+                    },
+                    loading: () => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: CircularProgressIndicator(color: AppColors.brandIndigo),
+                      ),
                     ),
+                    error: (_, __) => _buildEmptyEarningsCard(),
                   ),
-                  error: (_, __) => _buildEmptyEarningsCard(),
-                ),
+                ] else ...[
+                  ref.watch(creatorMyWithdrawalsProvider).when(
+                    data: (txList) {
+                      if (txList.isEmpty) {
+                        return _buildEmptyWithdrawalsCard(canWithdraw, wallet, minWithdrawal);
+                      }
+                      return ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: txList.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          return WithdrawalTrackingCard(withdrawal: txList[index]);
+                        },
+                      );
+                    },
+                    loading: () => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: CircularProgressIndicator(color: AppColors.coinGold),
+                      ),
+                    ),
+                    error: (_, __) => _buildEmptyWithdrawalsCard(canWithdraw, wallet, minWithdrawal),
+                  ),
+                ],
                 const SizedBox(height: 24),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyWithdrawalsCard(bool canWithdraw, CreatorWallet wallet, double minWithdrawal) {
+    return Container(
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.surfaceBorder),
+      ),
+      child: Center(
+        child: Column(
+          children: [
+            const Icon(Icons.payments_rounded, color: Colors.white24, size: 44),
+            const SizedBox(height: 12),
+            const Text(
+              'No payout requests submitted yet',
+              style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'When you request an earnings withdrawal to your PayPal or bank account, its live status and timeline will be tracked here.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+            if (canWithdraw) ...[
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => WithdrawalRequestScreen.show(context, wallet: wallet, minWithdrawal: minWithdrawal),
+                icon: const Icon(Icons.payments_rounded, size: 16),
+                label: const Text('Request Payout Now', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.coinGold,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -239,7 +328,7 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
                 if (!canWithdraw) {
                   _showWithdrawalThresholdDialog(minWithdrawal, wallet.availableEarningsUsd);
                 } else {
-                  _showWithdrawalNotice(wallet.availableEarningsUsd);
+                  WithdrawalRequestScreen.show(context, wallet: wallet, minWithdrawal: minWithdrawal);
                 }
               },
               icon: Icon(
@@ -431,40 +520,6 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('OK', style: TextStyle(color: AppColors.brandIndigo, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showWithdrawalNotice(double available) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: AppColors.success),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.account_balance_rounded, color: AppColors.success, size: 26),
-            SizedBox(width: 10),
-            Text('Withdrawal Payouts', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Text(
-          'You have \$${available.toStringAsFixed(2)} USD ready for payout!\n\nWithdrawal requests and beneficiary payout account management will be unlocked in the upcoming Withdrawal Phase.',
-          style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.success,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Got It', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
