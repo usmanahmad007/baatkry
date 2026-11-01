@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/gift_transaction.dart';
 import '../../models/virtual_gift.dart';
 import '../../services/livekit_service.dart';
+import '../../services/rate_limiter.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
 import '../shop/shop_modal.dart';
@@ -78,13 +79,24 @@ class _GiftModalState extends ConsumerState<GiftModal> {
       return;
     }
 
+    final myProfile = SupabaseService.instance.currentProfile;
+    final myId = myProfile?.id ?? 'me';
+    final myName = myProfile?.nickname ?? 'Friend';
+
+    // Anti-fraud / spam check
+    if (!RateLimiter.instance.canSendGift(myId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.danger,
+          content: Text('You are sending gifts too fast! Please slow down.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSending = true);
 
     try {
-      final myProfile = SupabaseService.instance.currentProfile;
-      final myId = myProfile?.id ?? 'me';
-      final myName = myProfile?.nickname ?? 'Friend';
-
       // 1. Atomic backend stored procedure / ledger debit
       final res = await SupabaseService.instance.sendVirtualGift(
         gift: gift,

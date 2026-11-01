@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import 'widgets/admin_catalog_tab.dart';
 import 'widgets/admin_creator_apps_tab.dart';
 import 'widgets/admin_kpi_tab.dart';
+import 'widgets/admin_reports_tab.dart';
 import 'widgets/admin_users_tab.dart';
 import 'widgets/admin_withdrawals_tab.dart';
 
@@ -33,7 +34,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -101,6 +102,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                   ref.invalidate(adminCoinPackagesProvider);
                   ref.invalidate(adminCommissionRuleProvider);
                   ref.invalidate(adminAuditLogsProvider);
+                  ref.invalidate(adminReportsProvider);
                 },
               ),
               IconButton(
@@ -123,6 +125,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                 Tab(icon: Icon(Icons.payments_rounded, size: 18), text: 'Payouts'),
                 Tab(icon: Icon(Icons.storefront_rounded, size: 18), text: 'Catalog & Fees'),
                 Tab(icon: Icon(Icons.security_rounded, size: 18), text: 'Users & Audit'),
+                Tab(icon: Icon(Icons.shield_rounded, size: 18), text: 'Safety & Reports'),
               ],
             ),
           ),
@@ -137,6 +140,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
               const AdminWithdrawalsTab(),
               const AdminCatalogTab(),
               const AdminUsersTab(),
+              const AdminReportsTab(),
             ],
           ),
         );

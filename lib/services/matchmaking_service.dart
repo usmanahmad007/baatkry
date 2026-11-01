@@ -237,12 +237,16 @@ class MatchmakingService {
         // 1. Check if this peer already coordinated and matched with us via presence update
         final matchedSession = payload['matched_session_id'] as String?;
         final remoteRoomId = payload['room_id'] as String?;
+        final peerUserId = payload['user_id'] as String? ?? peerSessionId;
+
+        // Anti-fraud / Moderation: Skip if peer is blocked
+        if (SupabaseService.instance.isUserBlocked(peerUserId)) continue;
+
         if (matchedSession == currentSession && remoteRoomId != null && remoteRoomId.isNotEmpty) {
           final peerName = payload['nickname'] as String? ?? 'Stranger';
           final peerGender = payload['gender'] as String? ?? 'unspecified';
           final peerCountry = payload['country'] as String? ?? 'Global (Worldwide)';
           final peerCountryFlag = payload['country_flag'] as String? ?? '🌍';
-          final peerUserId = payload['user_id'] as String? ?? peerSessionId;
 
           final myParticipantId = '${myProfile.id}_${currentSession.substring(5, 13)}';
           final token = TokenService.createLiveKitToken(

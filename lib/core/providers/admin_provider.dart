@@ -7,6 +7,7 @@ import '../../models/coin_package.dart';
 import '../../models/commission_rule.dart';
 import '../../models/creator_application.dart';
 import '../../models/creator_withdrawal.dart';
+import '../../models/user_report.dart';
 import '../../models/virtual_gift.dart';
 import '../../services/supabase_service.dart';
 import 'user_provider.dart';
@@ -56,4 +57,9 @@ final adminCommissionRuleProvider = FutureProvider<CommissionRule>((ref) async {
 /// Provider fetching immutable administrative audit logs
 final adminAuditLogsProvider = FutureProvider<List<AdminAuditLog>>((ref) async {
   return SupabaseService.instance.fetchAdminAuditLogs();
+});
+
+/// Provider fetching user abuse and safety reports
+final adminReportsProvider = FutureProvider.family<List<UserReport>, String?>((ref, status) async {
+  return SupabaseService.instance.fetchUserReports(status: status);
 });

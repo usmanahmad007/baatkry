@@ -19,6 +19,7 @@ import '../models/creator_wallet.dart';
 import '../models/creator_withdrawal.dart';
 import '../models/payout_account.dart';
 import '../models/user_profile.dart';
+import '../models/user_report.dart';
 import '../models/virtual_gift.dart';
 import '../models/wallet.dart';
 import '../models/wallet_ledger_entry.dart';
@@ -44,6 +45,10 @@ class SupabaseService {
   RealtimeChannel? _creatorWalletChannel;
   String? _browserDeviceId;
   bool _hasUsedJoiningBonus = false;
+  final Set<String> _blockedUserIds = {};
+
+  bool isUserBlocked(String userId) => _blockedUserIds.contains(userId);
+  Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
 
   Stream<UserProfile?> get profileStream => _profileController.stream;
   UserProfile? get currentProfile => _currentProfile;
@@ -1798,7 +1803,7 @@ class SupabaseService {
   }) async {
     if (_client != null && AppConfig.isSupabaseConfigured) {
       try {
-        await _client!.from('reports').insert({
+        await _client!.from('user_reports').insert({
           'reporter_id': _currentProfile?.id,
           'reported_id': reportedUserId,
           'reason': reason,
@@ -1806,22 +1811,142 @@ class SupabaseService {
           'room_id': roomId,
         });
       } catch (e) {
+        try {
+          await _client!.from('reports').insert({
+            'reporter_id': _currentProfile?.id,
+            'reported_id': reportedUserId,
+            'reason': reason,
+            'details': details,
+            'room_id': roomId,
+          });
+        } catch (_) {}
         debugPrint('[SupabaseService] Error submitting report: $e');
       }
     }
   }
 
   /// Block user
-  Future<void> blockUser(String targetUserId) async {
+  Future<void> blockUser(String targetUserId, [String? reason]) async {
+    _blockedUserIds.add(targetUserId);
     if (_client != null && AppConfig.isSupabaseConfigured) {
       try {
-        await _client!.from('blocked_users').insert({
-          'user_id': _currentProfile?.id,
-          'blocked_user_id': targetUserId,
+        await _client!.rpc('block_peer_user', params: {
+          'p_blocked_user_id': targetUserId,
+          'p_reason': reason,
         });
-      } catch (e) {
-        debugPrint('[SupabaseService] Error blocking user: $e');
+      } catch (_) {
+        try {
+          await _client!.from('blocked_users').insert({
+            'user_id': _currentProfile?.id,
+            'blocked_user_id': targetUserId,
+            'reason': reason,
+          });
+        } catch (e) {
+          debugPrint('[SupabaseService] Error blocking user: $e');
+        }
       }
+    }
+  }
+
+  /// Fetch list of users blocked by current user
+  Future<Set<String>> fetchBlockedUsers() async {
+    final myId = _currentProfile?.id ?? _client?.auth.currentUser?.id;
+    if (myId == null || _client == null || !AppConfig.isSupabaseConfigured) {
+      return _blockedUserIds;
+    }
+
+    try {
+      final res = await _client!
+          .from('blocked_users')
+          .select('blocked_user_id')
+          .eq('user_id', myId);
+
+      final list = res as List<dynamic>? ?? [];
+      for (final item in list) {
+        final bId = item['blocked_user_id']?.toString();
+        if (bId != null) _blockedUserIds.add(bId);
+      }
+    } catch (e) {
+      debugPrint('[SupabaseService] Error fetching blocked users: $e');
+    }
+    return _blockedUserIds;
+  }
+
+  /// Fetch user reports for administrative review
+  Future<List<UserReport>> fetchUserReports({String? status, int limit = 50}) async {
+    if (_client == null || !AppConfig.isSupabaseConfigured) {
+      return [];
+    }
+
+    try {
+      var query = _client!.from('user_reports').select();
+
+      if (status != null && status != 'all') {
+        query = query.eq('status', status);
+      }
+
+      final res = await query.order('created_at', ascending: false).limit(limit);
+      final list = res as List<dynamic>? ?? [];
+      return list.map((item) => UserReport.fromMap(item as Map<String, dynamic>)).toList();
+    } catch (e) {
+      debugPrint('[SupabaseService] Error fetching user reports: $e');
+      return [];
+    }
+  }
+
+  /// Resolve a user report with an administrative action
+  Future<Map<String, dynamic>> resolveUserReport({
+    required String reportId,
+    required String action,
+    String? adminNotes,
+  }) async {
+    if (_client == null || !AppConfig.isSupabaseConfigured) {
+      return {'success': false, 'error': 'Database offline'};
+    }
+
+    try {
+      final res = await _client!.rpc('resolve_user_report', params: {
+        'p_report_id': reportId,
+        'p_action': action,
+        'p_admin_notes': adminNotes,
+      });
+      return (res as Map<String, dynamic>?) ?? {'success': true};
+    } catch (e) {
+      debugPrint('[SupabaseService] Error resolving user report: $e');
+      rethrow;
+    }
+  }
+
+  /// Apply itemized moderation action to a user
+  Future<void> applyModerationAction({
+    required String targetUserId,
+    required String actionType,
+    required String reason,
+    int? durationHours,
+    String? adminNotes,
+  }) async {
+    if (_client == null || !AppConfig.isSupabaseConfigured) return;
+
+    try {
+      await _client!.from('moderation_actions').insert({
+        'target_user_id': targetUserId,
+        'admin_id': _currentProfile?.id,
+        'action_type': actionType,
+        'reason': reason,
+        'admin_notes': adminNotes,
+        'expires_at': durationHours != null
+            ? DateTime.now().add(Duration(hours: durationHours)).toIso8601String()
+            : null,
+      });
+
+      if (actionType == 'ban') {
+        await _client!.from('profiles').update({'is_banned': true}).eq('id', targetUserId);
+      } else if (actionType == 'freeze_wallet') {
+        await _client!.from('creator_wallets').update({'is_frozen': true}).eq('creator_id', targetUserId);
+      }
+    } catch (e) {
+      debugPrint('[SupabaseService] Error applying moderation action: $e');
+      rethrow;
     }
   }
 
