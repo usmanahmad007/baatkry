@@ -121,6 +121,9 @@ class _GiftModalState extends ConsumerState<GiftModal> {
 
       await LiveKitService.instance.sendGiftEvent(giftEvent);
 
+      ref.invalidate(userCoinsProvider);
+      ref.invalidate(walletLedgerProvider);
+
       if (mounted) {
         setState(() => _isSending = false);
         Navigator.of(context).pop();

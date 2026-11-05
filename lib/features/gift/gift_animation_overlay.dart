@@ -623,7 +623,7 @@ class _GiftAnimationOverlayState extends State<GiftAnimationOverlay>
                                         const Text('🪙', style: TextStyle(fontSize: 14)),
                                         const SizedBox(width: 5),
                                         Text(
-                                          '+${_activeGift!.coins} Coins',
+                                          isFromMe ? '-${_activeGift!.coins} Coins' : '+${_activeGift!.coins} Coins',
                                           style: const TextStyle(
                                             color: Colors.black,
                                             fontWeight: FontWeight.w900,

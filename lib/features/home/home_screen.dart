@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import '../../core/config/app_config.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/user_profile.dart';
+import '../../models/wallet.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
 import '../../services/supabase_service.dart';
@@ -42,6 +44,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
 
   LocalVideoTrack? _previewTrack;
   UserProfile? _profile;
+  StreamSubscription<UserProfile?>? _profileSub;
+  StreamSubscription<UserWallet?>? _walletSub;
 
   // Real-time live online users counter for start screen display
   late AnimationController _livePulseController;
@@ -51,6 +55,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     super.initState();
     _profile = SupabaseService.instance.currentProfile;
     _myGender = _profile?.gender ?? 'unspecified';
+
+    // Real-time balance and profile listener: updates coin pill and VIP perks everywhere live
+    _profileSub = SupabaseService.instance.profileStream.listen((p) {
+      if (mounted && p != null) {
+        setState(() {
+          _profile = p;
+        });
+      }
+    });
+
+    _walletSub = SupabaseService.instance.walletStream.listen((w) {
+      if (mounted && w != null && _profile != null) {
+        setState(() {
+          _profile = _profile!.copyWith(coins: w.balance);
+        });
+      }
+    });
+
     // By default, if the user has not selected any specific country, always select Worldwide
     if (_selectedCountryCode == 'ALL' ||
         _selectedCountry.toLowerCase().contains('global') ||
@@ -76,6 +98,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
 
   @override
   void dispose() {
+    _profileSub?.cancel();
+    _walletSub?.cancel();
     _livePulseController.dispose();
     LiveKitService.instance.stopLocalPreview();
     super.dispose();

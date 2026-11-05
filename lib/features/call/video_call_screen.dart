@@ -11,6 +11,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/chat_message.dart';
 import '../../models/gift_transaction.dart';
 import '../../models/user_profile.dart';
+import '../../models/wallet.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
 import '../../services/matchmaking_service.dart';
@@ -53,6 +54,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   StreamSubscription<GiftEvent>? _giftSub;
   StreamSubscription<void>? _peerDisconnectedSub;
   StreamSubscription<UserProfile?>? _profileSub;
+  StreamSubscription<UserWallet?>? _walletSub;
   StreamSubscription<MatchResult>? _matchSub;
   StreamSubscription<MatchmakingStatus>? _statusSub;
   late String _activeCountryFilter;
@@ -95,14 +97,20 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     _coinsRemaining = initialCoins;
     _guestTotalSecondsUsed = GuestSessionService.instance.cachedSecondsUsed;
 
-    // Listen to real-time profile updates (e.g. coin purchases in ShopModal)
+    // Listen to real-time profile and wallet updates (coin purchases, gifts sent/received)
     _profileSub = SupabaseService.instance.profileStream.listen((p) {
       if (mounted && p != null) {
-        if (p.coins > _coinsRemaining) {
-          setState(() {
-            _coinsRemaining = p.coins;
-          });
-        }
+        setState(() {
+          _coinsRemaining = p.coins;
+        });
+      }
+    });
+
+    _walletSub = SupabaseService.instance.walletStream.listen((w) {
+      if (mounted && w != null) {
+        setState(() {
+          _coinsRemaining = w.balance;
+        });
       }
     });
 
@@ -731,16 +739,40 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       }
     });
 
-    _giftSub = _liveKit.giftEventStream.listen((event) {
+    _giftSub = _liveKit.giftEventStream.listen((event) async {
       if (mounted) {
-        final isMe = event.senderId == (widget.myProfile.id);
+        final myId = SupabaseService.instance.currentProfile?.id ?? widget.myProfile.id;
+        final isMe = event.senderId == myId;
+
+        if (!isMe) {
+          // Received gift: add coins to receiver's account live!
+          await SupabaseService.instance.creditReceivedGiftCoins(
+            coins: event.coins,
+            senderId: event.senderId,
+            senderName: event.senderName,
+            giftName: event.giftName,
+          );
+          if (mounted) {
+            setState(() {
+              _coinsRemaining = SupabaseService.instance.currentProfile?.coins ?? (_coinsRemaining + event.coins);
+            });
+          }
+        } else {
+          // Gifter sent gift: deduct coins from gifter account
+          if (mounted) {
+            setState(() {
+              _coinsRemaining = SupabaseService.instance.currentProfile?.coins ?? (_coinsRemaining - event.coins);
+            });
+          }
+        }
+
         final systemMsg = ChatMessage(
           id: 'gift_${DateTime.now().millisecondsSinceEpoch}',
           senderId: event.senderId,
           senderName: 'System',
           text: isMe
-              ? '🎁 You sent ${event.giftName} ${event.emoji} (${event.coins} Coins)'
-              : '🎁 ${event.senderName} sent ${event.giftName} ${event.emoji} (${event.coins} Coins)',
+              ? '🎁 You sent ${event.giftName} ${event.emoji} (-${event.coins} Coins)'
+              : '🎁 ${event.senderName} sent you ${event.giftName} ${event.emoji} (+${event.coins} Coins credited!)',
           timestamp: event.timestamp,
           isMe: isMe,
         );
@@ -799,6 +831,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   void dispose() {
     _callTimer?.cancel();
     _profileSub?.cancel();
+    _walletSub?.cancel();
     _matchSub?.cancel();
     _statusSub?.cancel();
     if (_isGenderFiltered) {
@@ -1178,12 +1211,21 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to real-time profile updates via Riverpod (e.g. coin purchases in ShopModal)
+    // Listen to real-time profile and wallet updates via Riverpod (live coin deductions & credits)
     ref.listen<AsyncValue<UserProfile?>>(userProfileProvider, (previous, next) {
       final p = next.valueOrNull;
-      if (mounted && p != null && p.coins > _coinsRemaining) {
+      if (mounted && p != null && p.coins != _coinsRemaining) {
         setState(() {
           _coinsRemaining = p.coins;
+        });
+      }
+    });
+
+    ref.listen<AsyncValue<UserWallet?>>(userWalletStreamProvider, (previous, next) {
+      final w = next.valueOrNull;
+      if (mounted && w != null && w.balance != _coinsRemaining) {
+        setState(() {
+          _coinsRemaining = w.balance;
         });
       }
     });

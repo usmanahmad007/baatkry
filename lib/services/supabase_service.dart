@@ -1107,6 +1107,40 @@ class SupabaseService {
     };
   }
 
+  /// Credit incoming gift coins immediately to recipient and sync with local storage & DB
+  Future<void> creditReceivedGiftCoins({
+    required int coins,
+    required String senderId,
+    required String senderName,
+    required String giftName,
+  }) async {
+    if (_currentProfile == null) return;
+
+    final newCoins = _currentProfile!.coins + coins;
+    _currentProfile = _currentProfile!.copyWith(coins: newCoins);
+    _profileController.add(_currentProfile);
+
+    if (_currentWallet != null) {
+      _currentWallet = _currentWallet!.copyWith(
+        balance: newCoins,
+        totalPurchased: _currentWallet!.totalPurchased + coins,
+        updatedAt: DateTime.now(),
+      );
+      _walletController.add(_currentWallet);
+    }
+
+    // Persist locally
+    final uid = _currentProfile!.id;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('local_user_coins_$uid', newCoins);
+    await prefs.setInt('local_user_coins', newCoins);
+
+    final history = prefs.getStringList('local_tx_history_$uid') ?? [];
+    final txId = const Uuid().v4();
+    history.insert(0, '$txId|gift_received|+$coins|$newCoins|Received $giftName from $senderName');
+    await prefs.setStringList('local_tx_history_$uid', history);
+  }
+
   // ===========================================================================
   // CREATOR APPLICATION & KYC METHODS (Phase 5)
   // ===========================================================================
