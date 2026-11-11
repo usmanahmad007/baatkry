@@ -57,11 +57,17 @@ class LiveKitService {
         _previewTrack = null;
         try {
           await old?.stop();
+        } catch (_) {}
+        try {
           await old?.dispose();
         } catch (_) {}
       }
       _previewTrack = await LocalVideoTrack.createCameraTrack(
-        CameraCaptureOptions(cameraPosition: _cameraPosition),
+        CameraCaptureOptions(
+          cameraPosition: _cameraPosition,
+          params: kIsWeb ? VideoParametersPresets.h720_169 : VideoParametersPresets.h540_169,
+          maxFrameRate: 30,
+        ),
       );
       // Mark permission granted once
       await PermissionService.instance.markPermissionHandled(granted: true);
@@ -78,8 +84,14 @@ class LiveKitService {
       _previewTrack = null;
       try {
         await old?.stop();
+      } catch (e) {
+        debugPrint('[LiveKitService] stopLocalPreview stop note: $e');
+      }
+      try {
         await old?.dispose();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[LiveKitService] stopLocalPreview dispose note: $e');
+      }
     }
   }
 
@@ -93,8 +105,12 @@ class LiveKitService {
     _callStateController.add(CallState.connecting);
 
     try {
-      // Clean up previous room if any
+      // 1. Clean up previous room if any
       await disconnect();
+
+      // 2. Fully stop and release standalone local preview camera BEFORE room attempts
+      // to capture hardware camera, preventing camera locking/stucking on mobile and web
+      await stopLocalPreview();
 
       if (!AppConfig.isLiveKitConfigured) {
         // Mock connection for development & UI prototyping without LiveKit keys
@@ -104,12 +120,23 @@ class LiveKitService {
       }
 
       final room = Room(
-        roomOptions: const RoomOptions(
+        roomOptions: RoomOptions(
           adaptiveStream: true,
           dynacast: true,
+          defaultAudioCaptureOptions: const AudioCaptureOptions(
+            stopAudioCaptureOnMute: false,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          ),
           defaultCameraCaptureOptions: CameraCaptureOptions(
-            cameraPosition: CameraPosition.front,
+            cameraPosition: _cameraPosition,
+            params: kIsWeb ? VideoParametersPresets.h720_169 : VideoParametersPresets.h540_169,
             maxFrameRate: 30,
+          ),
+          defaultVideoPublishOptions: const VideoPublishOptions(
+            simulcast: !kIsWeb,
+            videoCodec: 'VP8',
           ),
         ),
       );
@@ -126,9 +153,28 @@ class LiveKitService {
         await PermissionService.instance.requestCombinedPermissions();
       }
 
-      // Publish local camera and mic
-      await room.localParticipant?.setCameraEnabled(true);
-      await room.localParticipant?.setMicrophoneEnabled(true);
+      // Publish local camera and mic respecting user's mute state
+      await room.localParticipant?.setCameraEnabled(!_isVideoMuted);
+      await room.localParticipant?.setMicrophoneEnabled(
+        !_isMicMuted,
+        audioCaptureOptions: const AudioCaptureOptions(
+          stopAudioCaptureOnMute: false,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        ),
+      );
+
+      // If mic was previously muted, ensure all published audio tracks are muted and disabled
+      if (_isMicMuted && room.localParticipant != null) {
+        for (final pub in room.localParticipant!.audioTrackPublications) {
+          await pub.mute(stopOnMute: false);
+          try {
+            await pub.track?.disable();
+            pub.track?.mediaStreamTrack.enabled = false;
+          } catch (_) {}
+        }
+      }
 
       // Ensure permission is recorded as handled
       await PermissionService.instance.markPermissionHandled(granted: true);
@@ -215,34 +261,92 @@ class LiveKitService {
         ? CameraPosition.back
         : CameraPosition.front;
 
+    final captureOptions = CameraCaptureOptions(
+      cameraPosition: _cameraPosition,
+      params: kIsWeb ? VideoParametersPresets.h720_169 : VideoParametersPresets.h540_169,
+      maxFrameRate: 30,
+    );
+
     if (_room?.localParticipant != null) {
       final videoTrack = _room!.localParticipant!.videoTrackPublications.firstOrNull?.track;
       if (videoTrack != null) {
         try {
-          await videoTrack.restartTrack(CameraCaptureOptions(cameraPosition: _cameraPosition));
-        } catch (_) {}
+          await videoTrack.restartTrack(captureOptions);
+        } catch (e) {
+          debugPrint('[LiveKitService] flipCamera room restartTrack error: $e');
+        }
       }
     }
     if (_previewTrack != null && !_previewTrack!.isDisposed) {
       try {
-        await _previewTrack!.restartTrack(CameraCaptureOptions(cameraPosition: _cameraPosition));
-      } catch (_) {}
+        await _previewTrack!.restartTrack(captureOptions);
+      } catch (e) {
+        debugPrint('[LiveKitService] flipCamera preview restartTrack error: $e');
+      }
     }
   }
 
-  /// Toggle Microphone Mute
+  /// Toggle Microphone Mute with guaranteed WebRTC track silence across mobile and web
   Future<void> toggleMicrophone() async {
     _isMicMuted = !_isMicMuted;
-    if (_room?.localParticipant != null) {
-      await _room!.localParticipant!.setMicrophoneEnabled(!_isMicMuted);
+    try {
+      if (_room?.localParticipant != null) {
+        final participant = _room!.localParticipant!;
+        await participant.setMicrophoneEnabled(
+          !_isMicMuted,
+          audioCaptureOptions: const AudioCaptureOptions(
+            stopAudioCaptureOnMute: false,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          ),
+        );
+        for (final pub in participant.audioTrackPublications) {
+          if (_isMicMuted) {
+            await pub.mute(stopOnMute: false);
+            try {
+              await pub.track?.disable();
+              pub.track?.mediaStreamTrack.enabled = false;
+            } catch (_) {}
+          } else {
+            await pub.unmute(stopOnMute: false);
+            try {
+              await pub.track?.enable();
+              pub.track?.mediaStreamTrack.enabled = true;
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[LiveKitService] toggleMicrophone error: $e');
     }
   }
 
-  /// Toggle Camera Video
+  /// Toggle Camera Video with hardware stream preservation
   Future<void> toggleVideo() async {
     _isVideoMuted = !_isVideoMuted;
-    if (_room?.localParticipant != null) {
-      await _room!.localParticipant!.setCameraEnabled(!_isVideoMuted);
+    try {
+      if (_room?.localParticipant != null) {
+        final participant = _room!.localParticipant!;
+        await participant.setCameraEnabled(!_isVideoMuted);
+        for (final pub in participant.videoTrackPublications) {
+          if (_isVideoMuted) {
+            await pub.mute(stopOnMute: false);
+            try {
+              await pub.track?.disable();
+              pub.track?.mediaStreamTrack.enabled = false;
+            } catch (_) {}
+          } else {
+            await pub.unmute(stopOnMute: false);
+            try {
+              await pub.track?.enable();
+              pub.track?.mediaStreamTrack.enabled = true;
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[LiveKitService] toggleVideo error: $e');
     }
   }
 

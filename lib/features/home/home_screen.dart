@@ -128,6 +128,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
   void _proceedToMatchingScreen() {
+    // Release any standalone local camera preview so radar & call can initialize camera smoothly
+    LiveKitService.instance.stopLocalPreview();
+
     final coins = _profile?.coins ?? 0;
     final isVip = _profile?.isVip ?? false;
     final effectiveFilter = (coins <= 0 && !isVip) ? 'everyone' : _selectedGenderFilter;
@@ -1574,9 +1577,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         fit: StackFit.expand,
         children: [
           // Live Video Preview
-          if (_previewTrack != null)
+          if (_previewTrack != null && !_previewTrack!.isDisposed)
             VideoTrackRenderer(
               _previewTrack!,
+              key: ValueKey('home_preview_${_previewTrack!.sid ?? _previewTrack!.mediaStreamTrack.id}'),
               fit: rtc.RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
               mirrorMode: VideoViewMirrorMode.mirror,
             )

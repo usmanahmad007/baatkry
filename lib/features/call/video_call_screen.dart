@@ -861,24 +861,24 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       }
     }
 
-    // Smooth in-place stranger transition:
-    // Keep local camera display active continuously without turning black!
-    final preview = await _liveKit.startLocalPreview();
-    if (mounted) {
-      setState(() {
-        if (preview != null) {
-          _localVideoTrack = preview;
-        }
-        _isSearchingNext = true;
-        _remoteVideoTrack = null;
-        _messages.clear();
-        _callElapsedSeconds = 0;
-        _isLiked = false;
-      });
-    }
+    // 1. Immediately reset state to searching and clear stranger stream
+    setState(() {
+      _isSearchingNext = true;
+      _remoteVideoTrack = null;
+      _messages.clear();
+      _callElapsedSeconds = 0;
+      _isLiked = false;
+    });
 
-    // Disconnect previous room cleanly
+    // 2. Disconnect previous room cleanly so its camera and audio tracks are fully stopped
     await _liveKit.disconnect();
+    if (!mounted) return;
+
+    // 3. Start standalone local preview camera while matchmaking searches, keeping local feed smooth
+    final preview = await _liveKit.startLocalPreview();
+    if (mounted && preview != null) {
+      setState(() => _localVideoTrack = preview);
+    }
     if (!mounted) return;
 
     // Ensure local video track is active (never black)
@@ -1745,10 +1745,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Local Camera Feed
-          if (_localVideoTrack != null)
+          // Local Camera Feed with unique ValueKey to prevent native texture freezing/sticking
+          if (_localVideoTrack != null && !_localVideoTrack!.isDisposed)
             VideoTrackRenderer(
               _localVideoTrack!,
+              key: ValueKey('local_track_${_localVideoTrack!.sid ?? _localVideoTrack!.mediaStreamTrack.id}'),
               fit: rtc.RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
               mirrorMode: VideoViewMirrorMode.mirror,
             )
@@ -1764,7 +1765,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               ),
             ),
 
-          // Bottom Left: "You" Pill
+          // Bottom Left: "You" Pill with Mic Mute Status Indicator
           Positioned(
             bottom: 14,
             left: 14,
@@ -1773,19 +1774,33 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.7),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white12),
+                border: Border.all(
+                  color: _liveKit.isMicMuted ? AppColors.danger.withOpacity(0.6) : Colors.white12,
+                ),
               ),
-              child: const Row(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.circle, color: AppColors.success, size: 8),
-                  SizedBox(width: 6),
-                  Text('You (Local)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  Icon(
+                    _liveKit.isMicMuted ? Icons.mic_off_rounded : Icons.circle,
+                    color: _liveKit.isMicMuted ? AppColors.danger : AppColors.success,
+                    size: _liveKit.isMicMuted ? 14 : 8,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _liveKit.isMicMuted ? 'You (Muted)' : 'You (Live)',
+                    style: TextStyle(
+                      color: _liveKit.isMicMuted ? AppColors.danger : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
 
-          // Bottom Right: Flip Camera & Mic Controls
+          // Bottom Right: Flip Camera, Video On/Off & Mic Controls
           Positioned(
             bottom: 12,
             right: 12,
@@ -1796,6 +1811,15 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                   isAlert: _liveKit.isMicMuted,
                   onTap: () async {
                     await _liveKit.toggleMicrophone();
+                    setState(() {});
+                  },
+                ),
+                const SizedBox(width: 8),
+                _buildCircularControl(
+                  icon: _liveKit.isVideoMuted ? Icons.videocam_off_rounded : Icons.videocam_rounded,
+                  isAlert: _liveKit.isVideoMuted,
+                  onTap: () async {
+                    await _liveKit.toggleVideo();
                     setState(() {});
                   },
                 ),
@@ -1897,9 +1921,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                 ),
               ),
             )
-          else if (_remoteVideoTrack != null)
+          else if (_remoteVideoTrack != null && !_remoteVideoTrack!.isDisposed)
             VideoTrackRenderer(
               _remoteVideoTrack!,
+              key: ValueKey('remote_track_${_remoteVideoTrack!.sid ?? _remoteVideoTrack!.mediaStreamTrack.id}'),
               fit: rtc.RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
             )
           else
