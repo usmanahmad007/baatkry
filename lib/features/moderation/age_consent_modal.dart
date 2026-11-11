@@ -30,7 +30,50 @@ class AgeConsentModal extends StatefulWidget {
     final prefs = await SharedPreferences.getInstance();
     final isBlocked = prefs.getBool(keyUnderageBlocked) ?? false;
     if (isBlocked) return false;
-    return prefs.getBool(keyAgeVerified) ?? false;
+
+    // 1. Check local SharedPreferences
+    final isVerifiedLocal = prefs.getBool(keyAgeVerified) ?? false;
+    final savedDob = prefs.getString('baatkry_user_dob') ?? prefs.getString('local_user_dob');
+    final savedAge = prefs.getInt(keyUserAge) ?? prefs.getInt('local_user_age');
+    if (isVerifiedLocal || savedDob != null || (savedAge != null && savedAge >= 18)) {
+      return true;
+    }
+
+    // 2. Check current in-memory profile (loaded from Supabase / Auth)
+    final profile = SupabaseService.instance.currentProfile;
+    if (profile != null) {
+      if (profile.isAgeVerified || profile.birthDate != null || (profile.age != null && profile.age! >= 18)) {
+        await prefs.setBool(keyAgeVerified, true);
+        if (profile.birthDate != null) {
+          await prefs.setString('baatkry_user_dob', profile.birthDate!);
+        }
+        if (profile.age != null) {
+          await prefs.setInt(keyUserAge, profile.age!);
+        }
+        return true;
+      }
+    }
+
+    // 3. If logged in with remote database profile, check remote profiles table directly
+    final userId = SupabaseService.instance.currentUserId;
+    if (userId != null && !SupabaseService.instance.isGuest) {
+      try {
+        final remote = await SupabaseService.instance.fetchRemoteProfile(userId);
+        if (remote != null &&
+            (remote.isAgeVerified || remote.birthDate != null || (remote.age != null && remote.age! >= 18))) {
+          await prefs.setBool(keyAgeVerified, true);
+          if (remote.birthDate != null) {
+            await prefs.setString('baatkry_user_dob', remote.birthDate!);
+          }
+          if (remote.age != null) {
+            await prefs.setInt(keyUserAge, remote.age!);
+          }
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    return false;
   }
 
   static Future<void> checkAndShow(
@@ -239,12 +282,23 @@ class _AgeConsentModalState extends State<AgeConsentModal> {
       return;
     }
 
+    final dobIso = _selectedDob != null
+        ? _selectedDob!.toIso8601String().split('T').first
+        : (SupabaseService.instance.currentProfile?.birthDate ??
+            '${DateTime.now().year - effectiveAge}-01-01');
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(AgeConsentModal.keyAgeVerified, true);
     await prefs.setInt(AgeConsentModal.keyUserAge, effectiveAge);
+    await prefs.setString('baatkry_user_dob', dobIso);
+    await prefs.setString('local_user_dob', dobIso);
     await prefs.setBool('eula_accepted', true);
 
-    await SupabaseService.instance.updateProfile(age: effectiveAge);
+    await SupabaseService.instance.updateProfile(
+      age: effectiveAge,
+      isAgeVerified: true,
+      birthDate: dobIso,
+    );
 
     // Warm up camera & mic permission directly inside this single modal
     // so no second dialog or repeated permission prompts occur

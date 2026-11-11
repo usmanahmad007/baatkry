@@ -52,6 +52,7 @@ class SupabaseService {
 
   Stream<UserProfile?> get profileStream => _profileController.stream;
   UserProfile? get currentProfile => _currentProfile;
+  String? get currentUserId => _currentProfile?.id ?? _client?.auth.currentUser?.id;
   Stream<UserWallet?> get walletStream => _walletController.stream;
   UserWallet? get currentWallet => _currentWallet;
   Stream<CreatorWallet?> get creatorWalletStream => _creatorWalletController.stream;
@@ -101,9 +102,30 @@ class SupabaseService {
               final savedUserCoins = prefs.getInt('local_user_coins_${user.id}') ?? prefs.getInt('local_user_coins');
 
               final remoteProfile = await _fetchRemoteProfile(user.id);
+              final googleAvatar = user.userMetadata?['avatar_url']?.toString() ??
+                  user.userMetadata?['picture']?.toString();
+              final googleName = user.userMetadata?['full_name']?.toString() ??
+                  user.userMetadata?['name']?.toString() ??
+                  user.email?.split('@').first ??
+                  'Google User';
+
               UserProfile profile;
               if (remoteProfile != null) {
-                profile = remoteProfile;
+                if ((remoteProfile.avatarUrl == null || remoteProfile.avatarUrl!.isEmpty) &&
+                    googleAvatar != null) {
+                  profile = remoteProfile.copyWith(avatarUrl: googleAvatar);
+                  try {
+                    await _client!.from('profiles').update({'avatar_url': googleAvatar}).eq('id', user.id);
+                  } catch (_) {}
+                } else {
+                  profile = remoteProfile;
+                }
+                if (profile.isAgeVerified || profile.birthDate != null || (profile.age != null && profile.age! >= 18)) {
+                  await prefs.setBool('baatkry_age_verified_18_plus', true);
+                  if (profile.birthDate != null) {
+                    await prefs.setString('baatkry_user_dob', profile.birthDate!);
+                  }
+                }
                 await prefs.setInt('local_user_coins_${user.id}', profile.coins);
                 await prefs.setInt('local_user_coins', profile.coins);
               } else {
@@ -116,7 +138,8 @@ class SupabaseService {
                 profile = UserProfile(
                   id: user.id,
                   isAnonymous: false,
-                  nickname: user.userMetadata?['full_name'] ?? user.email?.split('@').first ?? 'Google User',
+                  nickname: googleName,
+                  avatarUrl: googleAvatar,
                   coins: initialCoins,
                   age: detectedAge,
                   isAgeVerified: detectedAge != null && detectedAge >= 18,
@@ -180,16 +203,39 @@ class SupabaseService {
       final hasClaimedBonus = (prefs.getBool('baatkry_bonus_claimed_${user.id}') ?? false) ||
           (cleanEmail != null && (prefs.getBool('baatkry_bonus_claimed_$cleanEmail') ?? false));
       final savedUserCoins = prefs.getInt('local_user_coins_${user.id}') ?? prefs.getInt('local_user_coins');
+      final googleAvatar = user.userMetadata?['avatar_url']?.toString() ??
+          user.userMetadata?['picture']?.toString();
+      final googleName = user.userMetadata?['full_name']?.toString() ??
+          user.userMetadata?['name']?.toString() ??
+          (user.email?.split('@').first ?? 'User');
 
-      final profile = remote ??
-          UserProfile(
-            id: user.id,
-            isAnonymous: user.isAnonymous,
-            nickname: user.isAnonymous ? 'Guest #${user.id.substring(0, 4)}' : (user.email?.split('@').first ?? 'User'),
-            coins: user.isAnonymous
-                ? 0
-                : ((hasClaimedBonus || _hasUsedJoiningBonus) ? (savedUserCoins ?? 0) : 120),
-          );
+      UserProfile profile;
+      if (remote != null) {
+        if ((remote.avatarUrl == null || remote.avatarUrl!.isEmpty) && googleAvatar != null) {
+          profile = remote.copyWith(avatarUrl: googleAvatar);
+          try {
+            await _client!.from('profiles').update({'avatar_url': googleAvatar}).eq('id', user.id);
+          } catch (_) {}
+        } else {
+          profile = remote;
+        }
+        if (profile.isAgeVerified || profile.birthDate != null || (profile.age != null && profile.age! >= 18)) {
+          await prefs.setBool('baatkry_age_verified_18_plus', true);
+          if (profile.birthDate != null) {
+            await prefs.setString('baatkry_user_dob', profile.birthDate!);
+          }
+        }
+      } else {
+        profile = UserProfile(
+          id: user.id,
+          isAnonymous: user.isAnonymous,
+          nickname: user.isAnonymous ? 'Guest #${user.id.substring(0, 4)}' : googleName,
+          avatarUrl: googleAvatar,
+          coins: user.isAnonymous
+              ? 0
+              : ((hasClaimedBonus || _hasUsedJoiningBonus) ? (savedUserCoins ?? 0) : 120),
+        );
+      }
       _currentProfile = profile;
       _profileController.add(_currentProfile);
       await _syncUserWallet(user.id);
@@ -200,6 +246,7 @@ class SupabaseService {
     // Before signup/login, user cannot use coins (0 coins) and country is fixed to Global
     final savedId = prefs.getString('local_user_id') ?? const Uuid().v4();
     final savedNickname = prefs.getString('local_user_nickname') ?? 'Guest #${savedId.substring(0, 5)}';
+    final savedAvatarUrl = prefs.getString('local_user_avatar_url');
     final savedGender = prefs.getString('local_user_gender') ?? 'unspecified';
     final savedInterests = prefs.getStringList('local_user_interests') ?? ['Music', 'Gaming'];
 
@@ -209,6 +256,7 @@ class SupabaseService {
       id: savedId,
       isAnonymous: true,
       nickname: savedNickname,
+      avatarUrl: savedAvatarUrl,
       coins: 0, // Before signup, user cannot use coins
       isVip: false,
       gender: savedGender,
@@ -220,6 +268,9 @@ class SupabaseService {
     _profileController.add(_currentProfile);
     return _currentProfile!;
   }
+
+  /// Public accessor to fetch a remote profile by user ID
+  Future<UserProfile?> fetchRemoteProfile(String userId) => _fetchRemoteProfile(userId);
 
   Future<UserProfile?> _fetchRemoteProfile(String userId) async {
     if (_client == null) return null;
@@ -529,11 +580,38 @@ class SupabaseService {
       return GoogleAgeStatus.verifiedAdult;
     }
 
-    // 4. Age or DOB NOT found from Google/Gmail:
-    // Check if user previously verified age with birth certificate DOB picker
+    // 4. Age or DOB NOT found directly from Google OAuth:
+    // Check in-memory profile first
+    if (_currentProfile?.isAgeVerified == true ||
+        _currentProfile?.birthDate != null ||
+        (_currentProfile?.age != null && _currentProfile!.age! >= 18)) {
+      await prefs.setBool('baatkry_age_verified_18_plus', true);
+      if (_currentProfile?.birthDate != null) {
+        await prefs.setString('baatkry_user_dob', _currentProfile!.birthDate!);
+      }
+      return GoogleAgeStatus.verifiedAdult;
+    }
+
+    // Check remote profile from database table
+    if (user != null) {
+      final remote = await _fetchRemoteProfile(user.id);
+      if (remote != null &&
+          (remote.isAgeVerified || remote.birthDate != null || (remote.age != null && remote.age! >= 18))) {
+        _currentProfile = remote;
+        _profileController.add(_currentProfile);
+        await prefs.setBool('baatkry_age_verified_18_plus', true);
+        if (remote.birthDate != null) {
+          await prefs.setString('baatkry_user_dob', remote.birthDate!);
+        }
+        return GoogleAgeStatus.verifiedAdult;
+      }
+    }
+
+    // Check SharedPreferences if previously verified on this device
     final previouslyVerified = prefs.getBool('baatkry_age_verified_18_plus') ?? false;
-    final savedAge = prefs.getInt('baatkry_user_age');
-    if (previouslyVerified && savedAge != null && savedAge >= 18) {
+    final savedDob = prefs.getString('baatkry_user_dob') ?? prefs.getString('local_user_dob');
+    final savedAge = prefs.getInt('baatkry_user_age') ?? prefs.getInt('local_user_age');
+    if (previouslyVerified || savedDob != null || (savedAge != null && savedAge >= 18)) {
       return GoogleAgeStatus.verifiedAdult;
     }
 
@@ -678,14 +756,22 @@ class SupabaseService {
     await prefs.setBool('baatkry_bonus_claimed_$cleanEmail', true);
     await prefs.setBool('baatkry_bonus_claimed_$userId', true);
 
+    final savedAvatar = prefs.getString('local_user_avatar_url_$userId') ??
+        prefs.getString('local_user_avatar_url') ??
+        'https://api.dicebear.com/7.x/avataaars/png?seed=$nickname';
+    final dobIso = dateOfBirth != null
+        ? dateOfBirth.toIso8601String().split('T').first
+        : (prefs.getString('baatkry_user_dob') ?? prefs.getString('local_user_dob'));
+
     final profile = UserProfile(
       id: userId,
       isAnonymous: false,
       nickname: nickname,
+      avatarUrl: savedAvatar,
       coins: initialCoins,
       age: calculatedAge,
       isAgeVerified: true,
-      birthDate: dateOfBirth?.toIso8601String(),
+      birthDate: dobIso,
       country: 'Global (Worldwide)',
       countryCode: 'ALL',
     );
@@ -693,8 +779,14 @@ class SupabaseService {
     await prefs.setString('local_user_id', userId);
     await prefs.setString('local_user_nickname', nickname);
     await prefs.setString('local_user_email', cleanEmail);
+    await prefs.setString('local_user_avatar_url', savedAvatar);
     await prefs.setBool('baatkry_age_verified_18_plus', true);
+    if (dobIso != null) {
+      await prefs.setString('baatkry_user_dob', dobIso);
+      await prefs.setString('local_user_dob', dobIso);
+    }
     await prefs.setInt('local_user_age', calculatedAge);
+    await prefs.setInt('baatkry_user_age', calculatedAge);
     await prefs.setInt('local_user_coins_$userId', initialCoins);
     await prefs.setInt('local_user_coins', initialCoins);
 
@@ -873,13 +965,31 @@ class SupabaseService {
   }) async {
     if (_currentProfile == null) return;
 
+    // Calculate effective age & verification status from birthDate if provided
+    int? effectiveAge = age;
+    bool? effectiveVerified = isAgeVerified;
+    if (birthDate != null) {
+      final parsed = DateTime.tryParse(birthDate);
+      if (parsed != null) {
+        final now = DateTime.now();
+        int calcAge = now.year - parsed.year;
+        if (now.month < parsed.month || (now.month == parsed.month && now.day < parsed.day)) {
+          calcAge--;
+        }
+        effectiveAge ??= calcAge;
+      }
+    }
+    if (effectiveAge != null && effectiveAge >= 18) {
+      effectiveVerified = true;
+    }
+
     _currentProfile = _currentProfile!.copyWith(
       nickname: nickname,
       gender: gender,
       interests: interests,
       avatarUrl: avatarUrl,
-      age: age,
-      isAgeVerified: isAgeVerified,
+      age: effectiveAge,
+      isAgeVerified: effectiveVerified,
       birthDate: birthDate,
       country: country,
       countryCode: countryCode,
@@ -897,8 +1007,16 @@ class SupabaseService {
     if (nickname != null) await prefs.setString('local_user_nickname', nickname);
     if (gender != null) await prefs.setString('local_user_gender', gender);
     if (interests != null) await prefs.setStringList('local_user_interests', interests);
-    if (age != null) await prefs.setInt('local_user_age', age);
-    if (isAgeVerified != null) await prefs.setBool('baatkry_age_verified_18_plus', isAgeVerified);
+    if (avatarUrl != null) await prefs.setString('local_user_avatar_url', avatarUrl);
+    if (effectiveAge != null) {
+      await prefs.setInt('local_user_age', effectiveAge);
+      await prefs.setInt('baatkry_user_age', effectiveAge);
+    }
+    if (effectiveVerified != null) await prefs.setBool('baatkry_age_verified_18_plus', effectiveVerified);
+    if (birthDate != null) {
+      await prefs.setString('local_user_dob', birthDate);
+      await prefs.setString('baatkry_user_dob', birthDate);
+    }
     if (country != null) await prefs.setString('local_user_country', country);
     if (countryCode != null) await prefs.setString('local_user_country_code', countryCode);
 

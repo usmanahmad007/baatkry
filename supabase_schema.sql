@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     coins INTEGER DEFAULT 50, -- Free starter coins
     is_vip BOOLEAN DEFAULT false,
     status TEXT DEFAULT 'offline', -- 'online', 'in_queue', 'in_call', 'offline'
+    birth_date DATE,
+    date_of_birth DATE,
+    age INTEGER,
+    is_age_verified BOOLEAN DEFAULT false,
+    country TEXT DEFAULT 'Global (Worldwide)',
+    country_code TEXT DEFAULT 'ALL',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

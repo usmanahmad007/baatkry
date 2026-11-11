@@ -77,7 +77,6 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   late String _activeGenderFilter;
   late bool _isGenderFiltered;
-  bool _isGenderPromptShowing = false;
 
   bool get _isGuest => widget.myProfile.isAnonymous;
 
@@ -194,20 +193,15 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             _onGenderCoinsExhausted();
           }
         } else {
-          // Random Gender: DO NOT USE COINS! Unlimited free chat.
-          // Prompt every 30s to choose a specific gender
-          if (!_isGuest && _callElapsedSeconds > 0 && _callElapsedSeconds % 30 == 0) {
-            _showGenderSwitchPrompt();
-          }
+          // Random Gender: DO NOT USE COINS! Unlimited free chat without interruptions.
         }
       });
     });
   }
 
-  /// In random chat, prompt user every 30s to select a specific gender (centered modal)
+  /// Open gender switch modal manually (e.g. from call header action pill)
   void _showGenderSwitchPrompt() {
-    if (_isGenderPromptShowing || !mounted) return;
-    _isGenderPromptShowing = true;
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -338,9 +332,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
           ),
         );
       },
-    ).then((_) {
-      _isGenderPromptShowing = false;
-    });
+    );
   }
 
   Widget _buildGenderChoiceButton(

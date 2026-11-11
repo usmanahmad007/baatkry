@@ -580,10 +580,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: AppColors.brandIndigo,
-                  child: Text(
-                    _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
+                  backgroundImage: (_profile?.avatarUrl != null && _profile!.avatarUrl!.isNotEmpty)
+                      ? NetworkImage(_profile!.avatarUrl!)
+                      : null,
+                  onBackgroundImageError: (_profile?.avatarUrl != null && _profile!.avatarUrl!.isNotEmpty)
+                      ? (_, __) {}
+                      : null,
+                  child: (_profile?.avatarUrl == null || _profile!.avatarUrl!.isEmpty)
+                      ? Text(
+                          _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -648,7 +656,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 ],
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _showEditProfileModal();
+              },
+              icon: const Icon(Icons.edit_note_rounded, size: 18),
+              label: const Text('Edit Photo & Nickname', style: TextStyle(fontWeight: FontWeight.bold)),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 10),
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.of(ctx).pop();
@@ -663,6 +684,141 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditProfileModal() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final nameCtrl = TextEditingController(text: _profile?.nickname ?? '');
+    String selectedAvatar = _profile?.avatarUrl ?? '';
+
+    final presetAvatars = [
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+      'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
+      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(modalCtx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border(top: BorderSide(color: AppColors.border(context), width: 1.5)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Customize Your Profile',
+                  style: TextStyle(
+                    color: AppColors.txtPrimary(context),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Choose your avatar and display name shown on Start Chat.',
+                  style: TextStyle(color: AppColors.txtSecondary(context), fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Select Avatar Photo',
+                  style: TextStyle(color: AppColors.txtPrimary(context), fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 60,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: presetAvatars.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (_, idx) {
+                      final av = presetAvatars[idx];
+                      final isSelected = selectedAvatar == av;
+                      return GestureDetector(
+                        onTap: () {
+                          setModalState(() {
+                            selectedAvatar = av;
+                          });
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected ? AppColors.brandPink : Colors.transparent,
+                              width: 2.5,
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 25,
+                            backgroundImage: NetworkImage(av),
+                            onBackgroundImageError: (_, __) {},
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 18),
+                TextField(
+                  controller: nameCtrl,
+                  style: TextStyle(color: AppColors.txtPrimary(context)),
+                  decoration: InputDecoration(
+                    labelText: 'Display Name / Nickname',
+                    labelStyle: TextStyle(color: AppColors.txtSecondary(context)),
+                    filled: true,
+                    fillColor: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brandIndigo,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: () async {
+                    final newName = nameCtrl.text.trim();
+                    if (newName.isNotEmpty) {
+                      await SupabaseService.instance.updateProfile(
+                        nickname: newName,
+                        avatarUrl: selectedAvatar.isNotEmpty ? selectedAvatar : null,
+                      );
+                      if (mounted) setState(() {});
+                    }
+                    if (modalCtx.mounted) Navigator.of(modalCtx).pop();
+                  },
+                  child: const Text('Save Profile', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -873,6 +1029,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // User Identity Profile Card (Photo + Name)
+              _buildUserIdentityProfileCard(isGuest),
+
+              const SizedBox(height: 14),
+
               // Sleek Camera Preview Card
               _buildCameraPreviewCard(),
 
@@ -1032,10 +1193,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         CircleAvatar(
                           radius: 12,
                           backgroundColor: AppColors.brandIndigo,
-                          child: Text(
-                            _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
+                          backgroundImage: (_profile?.avatarUrl != null && _profile!.avatarUrl!.isNotEmpty)
+                              ? NetworkImage(_profile!.avatarUrl!)
+                              : null,
+                          onBackgroundImageError: (_profile?.avatarUrl != null && _profile!.avatarUrl!.isNotEmpty)
+                              ? (_, __) {}
+                              : null,
+                          child: (_profile?.avatarUrl == null || _profile!.avatarUrl!.isEmpty)
+                              ? Text(
+                                  _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                                )
+                              : null,
                         ),
                         const SizedBox(width: 8),
                         Text(
@@ -1168,6 +1337,211 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Identity Profile Card (Photo + Name displayed prominently)
+  // ---------------------------------------------------------------------------
+  Widget _buildUserIdentityProfileCard(bool isGuest) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final nickname = _profile?.nickname ?? (isGuest ? 'Anonymous Explorer' : 'User');
+    final avatarUrl = _profile?.avatarUrl;
+    final isVerified = _profile?.isAgeVerified ?? false;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: (isDark ? Colors.black : Colors.white).withOpacity(isDark ? 0.55 : 0.75),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: (isDark ? AppColors.brandIndigo : const Color(0xFFCBD5E1)).withOpacity(0.4),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.20 : 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // User Avatar / Photo with Online Pulse Badge
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.brandPink.withOpacity(0.6),
+                    width: 2,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 22,
+                  backgroundColor: AppColors.brandIndigo,
+                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  onBackgroundImageError: (avatarUrl != null && avatarUrl.isNotEmpty)
+                      ? (_, __) {}
+                      : null,
+                  child: (avatarUrl == null || avatarUrl.isEmpty)
+                      ? Text(
+                          nickname.isNotEmpty ? nickname[0].toUpperCase() : 'U',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    color: AppColors.success,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: isDark ? Colors.black : Colors.white, width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+
+          // User Name & Verification Status Badges
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        nickname,
+                        style: TextStyle(
+                          color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isVerified) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified_rounded, color: AppColors.success, size: 12),
+                            SizedBox(width: 3),
+                            Text(
+                              '18+ Verified',
+                              style: TextStyle(
+                                color: AppColors.success,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isGuest
+                            ? (isDark ? Colors.white10 : Colors.black12)
+                            : AppColors.brandIndigo.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isGuest ? 'Guest Explorer' : 'Member',
+                        style: TextStyle(
+                          color: isGuest
+                              ? (isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted)
+                              : AppColors.brandIndigo,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        '• ${_profile?.country ?? "Global"}',
+                        style: TextStyle(
+                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Edit Profile / Quick Settings Button
+          InkWell(
+            onTap: isGuest ? () => AuthModal.show(context) : _showEditProfileModal,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isGuest
+                    ? AppColors.brandIndigo.withOpacity(0.12)
+                    : (isDark ? Colors.white10 : Colors.black.withOpacity(0.05)),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isGuest
+                      ? AppColors.brandIndigo.withOpacity(0.3)
+                      : (isDark ? Colors.white12 : Colors.black12),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isGuest ? Icons.login_rounded : Icons.edit_note_rounded,
+                    size: 15,
+                    color: isGuest ? AppColors.brandIndigo : (isDark ? Colors.white70 : AppColors.lightTextPrimary),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    isGuest ? 'Sign In' : 'Edit',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isGuest ? AppColors.brandIndigo : (isDark ? Colors.white70 : AppColors.lightTextPrimary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1309,6 +1683,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 ),
               ),
             ),
+
+          // Bottom Left: User Identity Overlay (Photo + Name)
+          Positioned(
+            bottom: 12,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.65),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24, width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 11,
+                    backgroundColor: AppColors.brandIndigo,
+                    backgroundImage: (_profile?.avatarUrl != null && _profile!.avatarUrl!.isNotEmpty)
+                        ? NetworkImage(_profile!.avatarUrl!)
+                        : null,
+                    onBackgroundImageError: (_profile?.avatarUrl != null && _profile!.avatarUrl!.isNotEmpty)
+                        ? (_, __) {}
+                        : null,
+                    child: (_profile?.avatarUrl == null || _profile!.avatarUrl!.isEmpty)
+                        ? Text(
+                            _profile?.nickname.isNotEmpty == true ? _profile!.nickname[0].toUpperCase() : 'U',
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 7),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 130),
+                    child: Text(
+                      _profile?.nickname ?? 'You',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.success,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

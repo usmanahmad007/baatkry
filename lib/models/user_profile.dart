@@ -79,17 +79,26 @@ class UserProfile {
       'age': age,
       'is_age_verified': isAgeVerified,
       'birth_date': birthDate,
+      'date_of_birth': birthDate,
       'country': country,
       'country_code': countryCode,
     };
   }
 
   factory UserProfile.fromMap(Map<String, dynamic> map) {
+    final rawDob = (map['birth_date'] ?? map['date_of_birth'])?.toString();
+    final rawAge = map['age'] as int?;
+    final verified = map['is_age_verified'] as bool? ??
+        (rawDob != null || (rawAge != null && rawAge >= 18));
+
     return UserProfile(
       id: map['id'] as String? ?? '',
       isAnonymous: map['is_anonymous'] as bool? ?? true,
-      nickname: map['nickname'] as String? ?? 'Anonymous Explorer',
-      avatarUrl: map['avatar_url'] as String?,
+      nickname: map['nickname'] as String? ??
+          map['full_name'] as String? ??
+          map['name'] as String? ??
+          'Anonymous Explorer',
+      avatarUrl: (map['avatar_url'] ?? map['picture']) as String?,
       gender: map['gender'] as String? ?? 'unspecified',
       interests: (map['interests'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -98,9 +107,9 @@ class UserProfile {
       coins: map['coins'] as int? ?? 120,
       isVip: map['is_vip'] as bool? ?? false,
       status: map['status'] as String? ?? 'online',
-      age: map['age'] as int?,
-      isAgeVerified: map['is_age_verified'] as bool? ?? false,
-      birthDate: map['birth_date'] as String?,
+      age: rawAge,
+      isAgeVerified: verified,
+      birthDate: rawDob,
       country: map['country'] as String? ?? 'Global (Worldwide)',
       countryCode: map['country_code'] as String? ?? 'ALL',
     );
