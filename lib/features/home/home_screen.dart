@@ -1240,7 +1240,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             child: InkWell(
               onTap: () async {
                 await LiveKitService.instance.flipCamera();
-                setState(() {});
+                if (mounted) {
+                  setState(() => _previewTrack = LiveKitService.instance.localCameraTrack);
+                }
               },
               borderRadius: BorderRadius.circular(20),
               child: Container(
@@ -2419,7 +2421,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
               child: InkWell(
                 onTap: () async {
                   await LiveKitService.instance.flipCamera();
-                  setState(() {});
+                  if (mounted) {
+                    setState(() => _previewTrack = LiveKitService.instance.localCameraTrack);
+                  }
                 },
                 borderRadius: BorderRadius.circular(20),
                 child: Container(

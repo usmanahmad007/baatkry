@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 import '../core/config/app_config.dart';
 import '../models/chat_message.dart';
@@ -298,17 +299,53 @@ class LiveKitService {
         ? CameraPosition.back
         : CameraPosition.front;
 
-    final captureOptions = CameraCaptureOptions(
-      cameraPosition: _cameraPosition,
-      params: kIsWeb ? VideoParametersPresets.h720_169 : VideoParametersPresets.h540_169,
-      maxFrameRate: 30,
-    );
-
     if (_localCameraTrack != null && !_localCameraTrack!.isDisposed) {
+      // 1. On Native Mobile (Android / iOS): Use hardware camera switcher without track recreation
+      if (!kIsWeb) {
+        try {
+          await rtc.Helper.switchCamera(_localCameraTrack!.mediaStreamTrack);
+          return;
+        } catch (e) {
+          debugPrint('[LiveKitService] Helper.switchCamera note: $e');
+        }
+      }
+
+      // 2. If track is published to an active WebRTC room (sender != null), use setCameraPosition
+      if (_localCameraTrack!.sender != null) {
+        try {
+          await _localCameraTrack!.setCameraPosition(_cameraPosition);
+          return;
+        } catch (e) {
+          debugPrint('[LiveKitService] setCameraPosition note: $e');
+        }
+      }
+
+      // 3. Fallback for Web or unattached preview: recreate camera track cleanly
       try {
-        await _localCameraTrack!.restartTrack(captureOptions);
+        final captureOptions = CameraCaptureOptions(
+          cameraPosition: _cameraPosition,
+          params: kIsWeb ? VideoParametersPresets.h720_169 : VideoParametersPresets.h540_169,
+          maxFrameRate: 30,
+        );
+        final oldTrack = _localCameraTrack;
+        final newTrack = await LocalVideoTrack.createCameraTrack(captureOptions);
+        _localCameraTrack = newTrack;
+
+        // If published in room, unpublish old and publish new track
+        if (_room?.localParticipant != null && oldTrack != null) {
+          for (final pub in _room!.localParticipant!.videoTrackPublications) {
+            if (pub.track == oldTrack) {
+              await _room!.localParticipant!.removePublishedTrack(pub.sid);
+              await _room!.localParticipant!.publishVideoTrack(newTrack);
+              break;
+            }
+          }
+        }
+
+        await oldTrack?.stop();
+        await oldTrack?.dispose();
       } catch (e) {
-        debugPrint('[LiveKitService] flipCamera restartTrack error: $e');
+        debugPrint('[LiveKitService] flipCamera recreate error: $e');
       }
     }
   }

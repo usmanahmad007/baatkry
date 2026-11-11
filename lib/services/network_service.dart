@@ -3,7 +3,10 @@ import 'dart:io' show InternetAddress;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../core/config/app_config.dart';
 import '../core/theme/app_theme.dart';
+import 'connectivity/web_connectivity_stub.dart'
+    if (dart.library.html) 'connectivity/web_connectivity_web.dart';
 
 class NetworkService {
   static final NetworkService instance = NetworkService._internal();
@@ -24,20 +27,43 @@ class NetworkService {
 
   /// Check whether the device currently has active internet connectivity
   Future<bool> hasInternetConnection({Duration timeout = const Duration(seconds: 3)}) async {
-    // 1. On Native Mobile / Desktop: Fast DNS lookup check first
-    if (!kIsWeb) {
-      try {
-        final lookup = await InternetAddress.lookup('dns.google').timeout(timeout);
-        if (lookup.isNotEmpty && lookup[0].rawAddress.isNotEmpty) {
-          _updateOnlineState(true);
-          return true;
-        }
-      } catch (_) {
-        // Fall back to HTTP check below
+    // 1. On Web: Use browser online status & CORS-compliant Supabase ping
+    if (kIsWeb) {
+      if (!isBrowserOnline()) {
+        _updateOnlineState(false);
+        return false;
       }
+
+      if (AppConfig.supabaseUrl.isNotEmpty) {
+        try {
+          final uri = Uri.parse(AppConfig.supabaseUrl);
+          final response = await http.get(uri).timeout(timeout);
+          if (response.statusCode > 0) {
+            _updateOnlineState(true);
+            return true;
+          }
+        } catch (_) {
+          // Fall back to browser state if Supabase had a transient issue
+        }
+      }
+
+      final browserOnline = isBrowserOnline();
+      _updateOnlineState(browserOnline);
+      return browserOnline;
     }
 
-    // 2. HTTP connectivity verification (works on Web, iOS, Android)
+    // 2. On Native Mobile / Desktop: Fast DNS lookup check first
+    try {
+      final lookup = await InternetAddress.lookup('dns.google').timeout(timeout);
+      if (lookup.isNotEmpty && lookup[0].rawAddress.isNotEmpty) {
+        _updateOnlineState(true);
+        return true;
+      }
+    } catch (_) {
+      // Fall back to HTTP check below
+    }
+
+    // 3. Native HTTP connectivity verification (endpoints that return 204 No Content)
     for (final urlStr in _checkEndpoints) {
       try {
         final uri = Uri.parse(urlStr);

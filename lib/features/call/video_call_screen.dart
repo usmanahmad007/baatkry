@@ -1549,7 +1549,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             icon: Icons.flip_camera_ios_rounded,
             onTap: () async {
               await _liveKit.flipCamera();
-              setState(() {});
+              if (mounted) {
+                setState(() => _localVideoTrack = _liveKit.localCameraTrack);
+              }
             },
           ),
           const SizedBox(width: 6),
@@ -2094,7 +2096,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                     icon: Icons.flip_camera_ios_rounded,
                     onTap: () async {
                       await _liveKit.flipCamera();
-                      setState(() {});
+                      if (mounted) {
+                        setState(() => _localVideoTrack = _liveKit.localCameraTrack);
+                      }
                     },
                   ),
                 ],
