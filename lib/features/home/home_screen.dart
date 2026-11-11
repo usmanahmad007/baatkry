@@ -13,6 +13,7 @@ import '../../models/user_profile.dart';
 import '../../models/wallet.dart';
 import '../../services/guest_session_service.dart';
 import '../../services/livekit_service.dart';
+import '../../services/network_service.dart';
 import '../../services/supabase_service.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../auth/auth_modal.dart';
@@ -94,6 +95,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         AgeConsentModal.showUnderageBlockedDialog(context);
       }
     });
+
+    // Initialize persistent local camera for instant display on start screen
+    LiveKitService.instance.getOrCreateLocalCamera().then((track) {
+      if (mounted && track != null) {
+        setState(() => _previewTrack = track);
+      }
+    });
   }
 
   @override
@@ -101,13 +109,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     _profileSub?.cancel();
     _walletSub?.cancel();
     _livePulseController.dispose();
-    LiveKitService.instance.stopLocalPreview();
     super.dispose();
   }
 
   int get totalLiveUsersCount => ref.read(currentLiveUsersCountProvider);
 
-  void _onStartMatching() {
+  void _onStartMatching() async {
+    // 0. Internet Connectivity Gate: Check internet connection before starting video chat
+    final hasInternet = await NetworkService.instance.verifyConnectionWithPrompt(context);
+    if (!hasInternet || !mounted) return;
+
     // 1. Consent & Verification Gate: Prompt user to verify 18+ and grant camera & mic
     AgeConsentModal.checkAndShow(context, onVerified: () async {
       // 2. Check guest trial talk time limit
@@ -128,9 +139,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
   void _proceedToMatchingScreen() {
-    // Release any standalone local camera preview so radar & call can initialize camera smoothly
-    LiveKitService.instance.stopLocalPreview();
-
     final coins = _profile?.coins ?? 0;
     final isVip = _profile?.isVip ?? false;
     final effectiveFilter = (coins <= 0 && !isVip) ? 'everyone' : _selectedGenderFilter;
@@ -850,6 +858,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     _profile = ref.watch(currentProfileProvider);
     final isGuest = _profile?.isAnonymous ?? true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 768;
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF070B14) : const Color(0xFFF1F5F9),
@@ -884,46 +893,783 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ),
           ),
 
-          // 3. Foreground Interactive Start Chat Dashboard
+          // 3. Responsive Native Mobile Layout vs Desktop Dashboard
           SafeArea(
+            child: isMobile
+                ? _buildMobileNativeLayout(isGuest, isDark)
+                : _buildWebDesktopLayout(isGuest, isDark),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebDesktopLayout(bool isGuest, bool isDark) {
+    return Column(
+      children: [
+        // Top Modern Glassmorphic Navigation Bar
+        _buildTopNavBar(isGuest),
+
+        // Center Scrollable Main Content
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Live Global Traffic Pulsing Pill
+                    _buildLiveGlobalTrafficBanner(),
+
+                    const SizedBox(height: 12),
+
+                    // Ultra-Modern Glassmorphic Dashboard Card
+                    _buildModernDashboardCard(isGuest),
+
+                    const SizedBox(height: 14),
+
+                    // Footer brand caption
+                    _buildFooterCaption(),
+
+                    const SizedBox(height: 18),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mobile-Native Layout (Engineered specifically for smartphone screens)
+  // ---------------------------------------------------------------------------
+  Widget _buildMobileNativeLayout(bool isGuest, bool isDark) {
+    final coins = _profile?.coins ?? 0;
+
+    return Column(
+      children: [
+        // 1. Mobile Native App Bar
+        _buildMobileTopBar(isGuest, isDark, coins),
+
+        // 2. Scrollable Mobile Content
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Top Modern Glassmorphic Navigation Bar
-                _buildTopNavBar(isGuest),
+                if (isGuest) ...[
+                  _buildTrialStatusBanner(true),
+                  const SizedBox(height: 10),
+                ],
 
-                // Center Scrollable Main Content
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                // Mobile Hero Camera Preview Card
+                _buildMobileHeroCameraCard(isGuest, isDark),
+
+                const SizedBox(height: 14),
+
+                // Mobile Horizontal Gender Selection Rail
+                _buildMobileGenderRail(isDark),
+
+                const SizedBox(height: 12),
+
+                // Mobile Horizontal Country Selection Rail
+                _buildMobileCountryRail(isGuest, isDark),
+
+                const SizedBox(height: 12),
+
+                // Mobile User's Own Gender Selection
+                _buildMobileMyGenderRail(isDark),
+
+                const SizedBox(height: 10),
+
+                // Interests Hashtags
+                _buildInterestsSection(),
+
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        ),
+
+        // 3. Fixed Bottom Mobile Action Dock (Large, thumb-friendly start button)
+        _buildMobileBottomDock(isGuest, isDark),
+      ],
+    );
+  }
+
+  Widget _buildMobileTopBar(bool isGuest, bool isDark, int coins) {
+    final nickname = _profile?.nickname ?? (isGuest ? 'Guest' : 'User');
+    final avatarUrl = _profile?.avatarUrl;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Left: App Logo & Live Pulsing Online Count
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text('🐵', style: TextStyle(fontSize: 16)),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'BaatKry',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.circle, color: AppColors.success, size: 6),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${totalLiveUsersCount.clamp(1200, 99999)} Online',
+                            style: TextStyle(
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Right: Coins Pill + Theme Toggle + User Avatar
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Coins Pill
+              InkWell(
+                onTap: isGuest ? _showGuestCoinInfoDialog : () => WalletScreen.show(context),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurface : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.coinGold.withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.monetization_on_rounded, size: 13, color: AppColors.coinGold),
+                      const SizedBox(width: 3),
+                      Text(
+                        isGuest ? '0' : '$coins',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppColors.coinGold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+
+              // Theme Toggle Icon
+              IconButton(
+                iconSize: 18,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                icon: Icon(
+                  isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+                onPressed: () => ref.read(themeModeProvider.notifier).toggleTheme(),
+              ),
+              const SizedBox(width: 4),
+
+              // User Avatar
+              InkWell(
+                onTap: isGuest ? () => AuthModal.show(context) : _showEditProfileModal,
+                borderRadius: BorderRadius.circular(18),
+                child: CircleAvatar(
+                  radius: 17,
+                  backgroundColor: AppColors.brandIndigo,
+                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
+                  child: (avatarUrl == null || avatarUrl.isEmpty)
+                      ? Text(
+                          nickname.isNotEmpty ? nickname[0].toUpperCase() : 'U',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                        )
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileHeroCameraCard(bool isGuest, bool isDark) {
+    final nickname = _profile?.nickname ?? (isGuest ? 'Guest Explorer' : 'User');
+    final avatarUrl = _profile?.avatarUrl;
+    final isVerified = _profile?.isAgeVerified ?? false;
+
+    return Container(
+      height: 310,
+      decoration: BoxDecoration(
+        color: isDark ? Colors.black : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isDark ? AppColors.brandIndigo.withOpacity(0.55) : AppColors.brandIndigo.withOpacity(0.35),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.brandIndigo.withOpacity(isDark ? 0.30 : 0.12),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Live Video Feed
+          if (_previewTrack != null && !_previewTrack!.isDisposed)
+            VideoTrackRenderer(
+              _previewTrack!,
+              key: ValueKey('mob_preview_${_previewTrack!.sid ?? _previewTrack!.mediaStreamTrack.id}'),
+              fit: rtc.RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              mirrorMode: VideoViewMirrorMode.mirror,
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [const Color(0xFF14172B), const Color(0xFF0F1222)]
+                      : [const Color(0xFFF8FAFC), const Color(0xFFF1F5F9)],
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandIndigo.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.videocam_rounded, size: 40, color: AppColors.brandPink),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Ready to Video Chat',
+                      style: TextStyle(
+                        color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Camera is active and ready',
+                      style: TextStyle(
+                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Top Left Status Badge
+          Positioned(
+            top: 12,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.75),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.circle,
+                    color: _previewTrack != null ? AppColors.success : AppColors.brandCyan,
+                    size: 8,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _previewTrack != null ? 'Camera Ready' : 'Ready',
+                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Top Right Camera Flip Button
+          Positioned(
+            top: 12,
+            right: 12,
+            child: InkWell(
+              onTap: () async {
+                await LiveKitService.instance.flipCamera();
+                setState(() {});
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.75),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Icon(Icons.flip_camera_ios_rounded, color: Colors.white, size: 16),
+              ),
+            ),
+          ),
+
+          // Bottom Left: User Identity Overlay
+          Positioned(
+            bottom: 12,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.75),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 12,
+                    backgroundColor: AppColors.brandIndigo,
+                    backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
+                    child: (avatarUrl == null || avatarUrl.isEmpty)
+                        ? Text(
+                            nickname.isNotEmpty ? nickname[0].toUpperCase() : 'U',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    nickname,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  if (isVerified) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('18+', style: TextStyle(color: AppColors.success, fontSize: 9, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+          // Bottom Right: Country Location Pill
+          Positioned(
+            bottom: 12,
+            right: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.75),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                children: [
+                  Text(_selectedCountryFlag, style: const TextStyle(fontSize: 12)),
+                  const SizedBox(width: 5),
+                  Text(
+                    _selectedCountry.length > 15 ? '${_selectedCountry.substring(0, 13)}...' : _selectedCountry,
+                    style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileGenderRail(bool isDark) {
+    final options = [
+      {'key': 'everyone', 'label': 'Everyone (Free)', 'icon': '🌍', 'vip': false},
+      {'key': 'women', 'label': 'Women 👑', 'icon': '👩', 'vip': true},
+      {'key': 'men', 'label': 'Men 👑', 'icon': '👨', 'vip': true},
+      {'key': 'transgender', 'label': 'Trans 👑', 'icon': '⚧', 'vip': true},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'I WANT TO MEET 🎯',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: isDark ? Colors.white : AppColors.lightTextPrimary,
+              ),
+            ),
+            Flexible(
+              child: Text(
+                _selectedGenderFilter == 'everyone' ? 'Free Unlimited' : 'VIP Coins Mode',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: _selectedGenderFilter == 'everyone' ? AppColors.success : AppColors.coinGold,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 42,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: options.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final opt = options[index];
+              final key = opt['key'] as String;
+              final isSelected = _selectedGenderFilter == key;
+              final isVip = opt['vip'] as bool;
+
+              return InkWell(
+                onTap: () => _onSelectGenderFilter(key),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  decoration: BoxDecoration(
+                    gradient: isSelected
+                        ? (isVip ? AppColors.vipGoldGradient : AppColors.primaryGradient)
+                        : null,
+                    color: isSelected
+                        ? null
+                        : (isDark ? AppColors.darkSurface : Colors.white),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSelected
+                          ? (isVip ? AppColors.coinGold : AppColors.brandPink)
+                          : (isDark ? Colors.white12 : Colors.black12),
+                      width: isSelected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(opt['icon'] as String, style: const TextStyle(fontSize: 14)),
+                      const SizedBox(width: 6),
+                      Text(
+                        opt['label'] as String,
+                        style: TextStyle(
+                          color: isSelected
+                              ? (isVip ? Colors.black : Colors.white)
+                              : (isDark ? Colors.white : AppColors.lightTextPrimary),
+                          fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileCountryRail(bool isGuest, bool isDark) {
+    final topCountries = [
+      {'code': 'ALL', 'name': 'Global (Worldwide)', 'flag': '🌍'},
+      {'code': 'US', 'name': 'United States', 'flag': '🇺🇸'},
+      {'code': 'GB', 'name': 'United Kingdom', 'flag': '🇬🇧'},
+      {'code': 'IN', 'name': 'India', 'flag': '🇮🇳'},
+      {'code': 'PK', 'name': 'Pakistan', 'flag': '🇵🇰'},
+      {'code': 'DE', 'name': 'Germany', 'flag': '🇩🇪'},
+      {'code': 'CA', 'name': 'Canada', 'flag': '🇨🇦'},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Country Location 🌍',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: isDark ? Colors.white : AppColors.lightTextPrimary,
+              ),
+            ),
+            InkWell(
+              onTap: _onTapCountryFilter,
+              child: const Text(
+                'View All 🌐',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.brandIndigo),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 40,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: topCountries.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              if (index == topCountries.length) {
+                // More countries button
+                return InkWell(
+                  onTap: _onTapCountryFilter,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkSurface : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.brandIndigo.withOpacity(0.5)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.add_rounded, size: 16, color: AppColors.brandIndigo),
+                        SizedBox(width: 4),
+                        Text('More', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.brandIndigo)),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              final c = topCountries[index];
+              final code = c['code']!;
+              final isSelected = _selectedCountryCode == code;
+
+              return InkWell(
+                onTap: () {
+                  if (code != 'ALL' && isGuest) {
+                    _onTapCountryFilter();
+                    return;
+                  }
+                  setState(() {
+                    _selectedCountryCode = code;
+                    _selectedCountry = c['name']!;
+                    _selectedCountryFlag = c['flag']!;
+                  });
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.brandIndigo : (isDark ? AppColors.darkSurface : Colors.white),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSelected ? AppColors.brandIndigo : (isDark ? Colors.white12 : Colors.black12),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(c['flag']!, style: const TextStyle(fontSize: 13)),
+                      const SizedBox(width: 6),
+                      Text(
+                        c['name']!.split(' ').first,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : (isDark ? Colors.white : AppColors.lightTextPrimary),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileMyGenderRail(bool isDark) {
+    final genders = [
+      {'key': 'men', 'label': 'Male 👨'},
+      {'key': 'women', 'label': 'Female 👩'},
+      {'key': 'transgender', 'label': 'Other ⚧'},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'My Gender 👤',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+            color: isDark ? Colors.white : AppColors.lightTextPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: genders.map((g) {
+            final key = g['key']!;
+            final isSelected = _myGender == key;
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: InkWell(
+                  onTap: () => _updateMyGender(key),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.brandIndigo.withOpacity(0.2)
+                          : (isDark ? AppColors.darkSurface : Colors.white),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected ? AppColors.brandIndigo : (isDark ? Colors.white12 : Colors.black12),
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                    ),
                     child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 520),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Live Global Traffic Pulsing Pill
-                            _buildLiveGlobalTrafficBanner(),
-
-                            const SizedBox(height: 12),
-
-                            // Ultra-Modern Glassmorphic Dashboard Card
-                            _buildModernDashboardCard(isGuest),
-
-                            const SizedBox(height: 14),
-
-                            // Footer brand caption
-                            _buildFooterCaption(),
-
-                            const SizedBox(height: 18),
-                          ],
+                      child: Text(
+                        g['label']!,
+                        style: TextStyle(
+                          color: isSelected ? AppColors.brandIndigo : (isDark ? Colors.white70 : AppColors.lightTextPrimary),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 12,
                         ),
                       ),
                     ),
                   ),
                 ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileBottomDock(bool isGuest, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        color: (isDark ? const Color(0xFF0F172A) : Colors.white).withOpacity(0.95),
+        border: Border(
+          top: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.08),
+          ),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 52,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.brandPink.withOpacity(0.35),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              ),
+              onPressed: _onStartMatching,
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.video_call_rounded, size: 24, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(
+                    'START VIDEO CHAT',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isGuest
+                ? '⏳ 3 minutes free trial (30s per person) • Sign in for unlimited'
+                : '✨ 100% Free Unlimited Video Chat • Authentic Live Users',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),

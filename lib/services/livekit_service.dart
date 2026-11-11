@@ -16,7 +16,7 @@ class LiveKitService {
   Room? _room;
   EventsListener<RoomEvent>? _listener;
 
-  LocalVideoTrack? _previewTrack;
+  LocalVideoTrack? _localCameraTrack;
   VideoTrack? _remoteVideoTrack;
   CameraPosition _cameraPosition = CameraPosition.front;
   bool _isMicMuted = false;
@@ -37,24 +37,24 @@ class LiveKitService {
   Stream<void> get peerDisconnectedStream => _peerDisconnectedController.stream;
 
   Room? get room => _room;
-  LocalVideoTrack? get previewTrack => _previewTrack;
+  LocalVideoTrack? get localCameraTrack => _localCameraTrack;
+  LocalVideoTrack? get previewTrack => _localCameraTrack;
   VideoTrack? get remoteVideoTrack => _remoteVideoTrack;
   bool get isMicMuted => _isMicMuted;
   bool get isVideoMuted => _isVideoMuted;
   CameraPosition get cameraPosition => _cameraPosition;
 
-  /// Start a standalone camera preview before entering a call (for Home Screen)
-  /// Uses cached permissions to avoid repeated permission prompts
-  Future<LocalVideoTrack?> startLocalPreview() async {
-    // If preview track is already active and running, reuse it!
-    if (_previewTrack != null && !_previewTrack!.isDisposed) {
-      return _previewTrack;
+  /// Get or create a persistent, single-source local camera track
+  /// Reusing this track across room transitions eliminates hardware locking and freezing
+  Future<LocalVideoTrack?> getOrCreateLocalCamera() async {
+    if (_localCameraTrack != null && !_localCameraTrack!.isDisposed) {
+      return _localCameraTrack;
     }
 
     try {
-      if (_previewTrack != null) {
-        final old = _previewTrack;
-        _previewTrack = null;
+      if (_localCameraTrack != null) {
+        final old = _localCameraTrack;
+        _localCameraTrack = null;
         try {
           await old?.stop();
         } catch (_) {}
@@ -62,35 +62,55 @@ class LiveKitService {
           await old?.dispose();
         } catch (_) {}
       }
-      _previewTrack = await LocalVideoTrack.createCameraTrack(
+
+      _localCameraTrack = await LocalVideoTrack.createCameraTrack(
         CameraCaptureOptions(
           cameraPosition: _cameraPosition,
           params: kIsWeb ? VideoParametersPresets.h720_169 : VideoParametersPresets.h540_169,
           maxFrameRate: 30,
         ),
       );
-      // Mark permission granted once
+
+      // If muted, ensure track state reflects video mute preference
+      if (_isVideoMuted && _localCameraTrack != null) {
+        try {
+          await _localCameraTrack!.disable();
+          _localCameraTrack!.mediaStreamTrack.enabled = false;
+        } catch (_) {}
+      }
+
       await PermissionService.instance.markPermissionHandled(granted: true);
-      return _previewTrack;
+      return _localCameraTrack;
     } catch (e) {
-      debugPrint('[LiveKitService] Preview camera start error: $e');
+      debugPrint('[LiveKitService] getOrCreateLocalCamera error: $e');
       return null;
     }
   }
 
+  /// Start local camera preview (delegates to persistent local camera)
+  Future<LocalVideoTrack?> startLocalPreview() async {
+    return getOrCreateLocalCamera();
+  }
+
+  /// Stop local preview without destroying the underlying hardware camera during active matching
   Future<void> stopLocalPreview() async {
-    if (_previewTrack != null) {
-      final old = _previewTrack;
-      _previewTrack = null;
+    // Kept non-destructive so user camera does not freeze or reset between calls
+  }
+
+  /// Fully stop and release the camera hardware (called when leaving call screen or app background)
+  Future<void> releaseLocalCamera() async {
+    if (_localCameraTrack != null) {
+      final old = _localCameraTrack;
+      _localCameraTrack = null;
       try {
         await old?.stop();
       } catch (e) {
-        debugPrint('[LiveKitService] stopLocalPreview stop note: $e');
+        debugPrint('[LiveKitService] releaseLocalCamera stop note: $e');
       }
       try {
         await old?.dispose();
       } catch (e) {
-        debugPrint('[LiveKitService] stopLocalPreview dispose note: $e');
+        debugPrint('[LiveKitService] releaseLocalCamera dispose note: $e');
       }
     }
   }
@@ -105,16 +125,13 @@ class LiveKitService {
     _callStateController.add(CallState.connecting);
 
     try {
-      // 1. Clean up previous room if any
+      // 1. Clean up previous room without stopping the persistent local camera
       await disconnect();
-
-      // 2. Fully stop and release standalone local preview camera BEFORE room attempts
-      // to capture hardware camera, preventing camera locking/stucking on mobile and web
-      await stopLocalPreview();
 
       if (!AppConfig.isLiveKitConfigured) {
         // Mock connection for development & UI prototyping without LiveKit keys
         debugPrint('[LiveKitService] LiveKit credentials not set. Running in mock video mode.');
+        await getOrCreateLocalCamera();
         _callStateController.add(CallState.connected);
         return;
       }
@@ -123,6 +140,7 @@ class LiveKitService {
         roomOptions: RoomOptions(
           adaptiveStream: true,
           dynacast: true,
+          stopLocalTrackOnUnpublish: false, // PRESERVES local camera track across room transitions!
           defaultAudioCaptureOptions: const AudioCaptureOptions(
             stopAudioCaptureOnMute: false,
             echoCancellation: true,
@@ -153,8 +171,19 @@ class LiveKitService {
         await PermissionService.instance.requestCombinedPermissions();
       }
 
-      // Publish local camera and mic respecting user's mute state
-      await room.localParticipant?.setCameraEnabled(!_isVideoMuted);
+      // 2. Ensure persistent local camera is ready
+      final cam = await getOrCreateLocalCamera();
+
+      // 3. Publish persistent camera track to room
+      if (cam != null) {
+        try {
+          await room.localParticipant?.publishVideoTrack(cam);
+        } catch (e) {
+          debugPrint('[LiveKitService] publishVideoTrack note: $e');
+        }
+      }
+
+      // Publish local microphone respecting user's mute state
       await room.localParticipant?.setMicrophoneEnabled(
         !_isMicMuted,
         audioCaptureOptions: const AudioCaptureOptions(
@@ -174,6 +203,14 @@ class LiveKitService {
             pub.track?.mediaStreamTrack.enabled = false;
           } catch (_) {}
         }
+      }
+
+      // If video was previously muted, ensure video track is disabled
+      if (_isVideoMuted && cam != null) {
+        try {
+          await cam.disable();
+          cam.mediaStreamTrack.enabled = false;
+        } catch (_) {}
       }
 
       // Ensure permission is recorded as handled
@@ -267,21 +304,11 @@ class LiveKitService {
       maxFrameRate: 30,
     );
 
-    if (_room?.localParticipant != null) {
-      final videoTrack = _room!.localParticipant!.videoTrackPublications.firstOrNull?.track;
-      if (videoTrack != null) {
-        try {
-          await videoTrack.restartTrack(captureOptions);
-        } catch (e) {
-          debugPrint('[LiveKitService] flipCamera room restartTrack error: $e');
-        }
-      }
-    }
-    if (_previewTrack != null && !_previewTrack!.isDisposed) {
+    if (_localCameraTrack != null && !_localCameraTrack!.isDisposed) {
       try {
-        await _previewTrack!.restartTrack(captureOptions);
+        await _localCameraTrack!.restartTrack(captureOptions);
       } catch (e) {
-        debugPrint('[LiveKitService] flipCamera preview restartTrack error: $e');
+        debugPrint('[LiveKitService] flipCamera restartTrack error: $e');
       }
     }
   }
@@ -326,9 +353,21 @@ class LiveKitService {
   Future<void> toggleVideo() async {
     _isVideoMuted = !_isVideoMuted;
     try {
+      if (_localCameraTrack != null) {
+        if (_isVideoMuted) {
+          try {
+            await _localCameraTrack!.disable();
+            _localCameraTrack!.mediaStreamTrack.enabled = false;
+          } catch (_) {}
+        } else {
+          try {
+            await _localCameraTrack!.enable();
+            _localCameraTrack!.mediaStreamTrack.enabled = true;
+          } catch (_) {}
+        }
+      }
       if (_room?.localParticipant != null) {
         final participant = _room!.localParticipant!;
-        await participant.setCameraEnabled(!_isVideoMuted);
         for (final pub in participant.videoTrackPublications) {
           if (_isVideoMuted) {
             await pub.mute(stopOnMute: false);

@@ -128,7 +128,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   Future<void> _startLocalCamera() async {
     try {
-      final track = await _liveKit.startLocalPreview();
+      final track = await _liveKit.getOrCreateLocalCamera();
       if (mounted && track != null) {
         setState(() => _localVideoTrack = track);
       }
@@ -795,12 +795,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         token: match.token,
       );
 
-      final localPub = _liveKit.room?.localParticipant?.videoTrackPublications.firstOrNull;
-      if (localPub?.track != null) {
-        if (mounted) setState(() => _localVideoTrack = localPub!.track);
-      } else if (_localVideoTrack == null || _localVideoTrack!.isDisposed) {
-        final track = await _liveKit.startLocalPreview();
-        if (mounted && track != null) setState(() => _localVideoTrack = track);
+      if (mounted) {
+        setState(() {
+          _localVideoTrack = _liveKit.localCameraTrack;
+        });
       }
     } catch (e) {
       debugPrint('[VideoCallScreen] Connection error: $e');
@@ -868,24 +866,18 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       _messages.clear();
       _callElapsedSeconds = 0;
       _isLiked = false;
+      _localVideoTrack = _liveKit.localCameraTrack; // keeps camera uninterrupted!
     });
 
-    // 2. Disconnect previous room cleanly so its camera and audio tracks are fully stopped
+    // 2. Disconnect previous room cleanly so its peer connection is closed,
+    // while the local camera track remains running continuously without freezing
     await _liveKit.disconnect();
     if (!mounted) return;
 
-    // 3. Start standalone local preview camera while matchmaking searches, keeping local feed smooth
-    final preview = await _liveKit.startLocalPreview();
-    if (mounted && preview != null) {
-      setState(() => _localVideoTrack = preview);
-    }
-    if (!mounted) return;
-
-    // Ensure local video track is active (never black)
     if (_localVideoTrack == null || _localVideoTrack!.isDisposed) {
-      final fallbackTrack = await _liveKit.startLocalPreview();
-      if (mounted && fallbackTrack != null) {
-        setState(() => _localVideoTrack = fallbackTrack);
+      final track = await _liveKit.getOrCreateLocalCamera();
+      if (mounted && track != null) {
+        setState(() => _localVideoTrack = track);
       }
     }
 
@@ -1243,20 +1235,17 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Column(
-                children: [
-                  // Top Navigation Bar
-                  if (!_isTheaterMode) SafeArea(bottom: false, child: _buildTopNavBar()),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isDesktop = constraints.maxWidth >= 900;
 
-                  // Main Body: Responsive Desktop Side-by-Side vs Mobile Vertical Split
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isDesktop = constraints.maxWidth >= 900;
-
-                        if (isDesktop) {
-                          // DESKTOP LAYOUT: My Camera (Left) + Stranger's Camera (Center) + Chat (Right)
-                          return Padding(
+                  if (isDesktop) {
+                    // DESKTOP LAYOUT: Top navbar + side-by-side video feeds + right-side chat panel
+                    return Column(
+                      children: [
+                        if (!_isTheaterMode) SafeArea(bottom: false, child: _buildTopNavBar()),
+                        Expanded(
+                          child: Padding(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1283,46 +1272,17 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                                   ),
                               ],
                             ),
-                          );
-                        } else {
-                          // MOBILE LAYOUT: Half screen for one user and half screen for second user (50/50 vertical split)
-                          return Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
-                            child: Stack(
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    // Top 50%: Remote Stranger
-                                    Expanded(
-                                      child: _buildStrangerCameraCard(isMobile: true),
-                                    ),
-                                    const SizedBox(height: 8),
-
-                                    // Bottom 50%: My Local Camera
-                                    Expanded(
-                                      child: _buildMyCameraCard(isMobile: true),
-                                    ),
-                                  ],
-                                ),
-
-                                // Floating Mobile Chat Overlay
-                                if (_showMobileChat)
-                                  Positioned(
-                                    bottom: 0,
-                                    left: 0,
-                                    right: 0,
-                                    height: constraints.maxHeight * 0.45,
-                                    child: _buildChatSidebar(isMobile: true),
-                                  ),
-                              ],
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                ],
+                          ),
+                        ),
+                      ],
+                    );
+                  } else {
+                    // MOBILE NATIVE LAYOUT: True full-screen 50/50 vertical split with floating controls & quick skip
+                    return SafeArea(
+                      child: _buildMobileVideoCallView(constraints),
+                    );
+                  }
+                },
               ),
 
               // Persistent Floating Controls in Full Screen mode so user can always exit full screen
@@ -1373,6 +1333,310 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     ),
   );
 }
+
+  // ---------------------------------------------------------------------------
+  // Mobile Native Video Call Layout (Engineered for native smartphone experience)
+  // ---------------------------------------------------------------------------
+  Widget _buildMobileVideoCallView(BoxConstraints constraints) {
+    return Stack(
+      children: [
+        // 1. Two 50/50 Video Feeds
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top 50%: Stranger Camera Feed
+              Expanded(
+                child: _buildStrangerCameraCard(isMobile: true),
+              ),
+              const SizedBox(height: 6),
+
+              // Bottom 50%: My Local Camera Feed
+              Expanded(
+                child: _buildMyCameraCard(isMobile: true),
+              ),
+            ],
+          ),
+        ),
+
+        // 2. Mobile Floating Top Header Overlay
+        Positioned(
+          top: 10,
+          left: 12,
+          right: 12,
+          child: _buildMobileFloatingHeader(),
+        ),
+
+        // 3. Mobile Floating Bottom Control Dock
+        Positioned(
+          bottom: 12,
+          left: 12,
+          right: 12,
+          child: _buildMobileBottomControlsDock(),
+        ),
+
+        // 4. Mobile Chat Slide-Up Sheet
+        if (_showMobileChat)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: constraints.maxHeight * 0.55,
+            child: _buildChatSidebar(isMobile: true),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMobileFloatingHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        // Left: Exit Button + Duration / VIP Timer
+        Row(
+          children: [
+            InkWell(
+              onTap: () => Navigator.of(context).pop(),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.75),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.danger.withOpacity(0.6)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.close_rounded, color: AppColors.danger, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'Exit',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Call Duration or VIP countdown
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.75),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _isGenderFiltered ? Icons.workspace_premium_rounded : Icons.timer_outlined,
+                    color: _isGenderFiltered ? AppColors.coinGold : AppColors.success,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isGenderFiltered
+                        ? '${_formatDuration(_coinsRemaining)} left'
+                        : _formatDuration(_callElapsedSeconds),
+                    style: TextStyle(
+                      color: _isGenderFiltered ? AppColors.coinGold : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        // Right: Coins Pill + Report Flag
+        Row(
+          children: [
+            InkWell(
+              onTap: () => ShopModal.show(context),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  gradient: AppColors.vipGoldGradient,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.coinGold.withOpacity(0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.monetization_on_rounded, size: 14, color: Colors.black),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$_coinsRemaining',
+                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Report User Icon
+            InkWell(
+              onTap: _onReportUser,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.75),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Icon(Icons.flag_rounded, color: Colors.white70, size: 16),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileBottomControlsDock() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.82),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: Colors.white12, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // 1. Mic Mute / Unmute
+          _buildCircularControl(
+            icon: _liveKit.isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+            isAlert: _liveKit.isMicMuted,
+            onTap: () async {
+              await _liveKit.toggleMicrophone();
+              setState(() {});
+            },
+          ),
+          const SizedBox(width: 6),
+
+          // 2. Video Camera On / Off
+          _buildCircularControl(
+            icon: _liveKit.isVideoMuted ? Icons.videocam_off_rounded : Icons.videocam_rounded,
+            isAlert: _liveKit.isVideoMuted,
+            onTap: () async {
+              await _liveKit.toggleVideo();
+              setState(() {});
+            },
+          ),
+          const SizedBox(width: 6),
+
+          // 3. Flip Camera
+          _buildCircularControl(
+            icon: Icons.flip_camera_ios_rounded,
+            onTap: () async {
+              await _liveKit.flipCamera();
+              setState(() {});
+            },
+          ),
+          const SizedBox(width: 6),
+
+          // 4. Send Gift
+          _buildCircularControl(
+            icon: Icons.card_giftcard_rounded,
+            onTap: () {
+              GiftModal.show(
+                context,
+                peerId: _activeMatchResult.peerId,
+                peerName: _activeMatchResult.peerName,
+                roomId: _activeMatchResult.roomId,
+              );
+            },
+          ),
+          const SizedBox(width: 6),
+
+          // 5. Text Chat with unread badge
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _buildCircularControl(
+                icon: Icons.chat_bubble_outline_rounded,
+                onTap: () => setState(() => _showMobileChat = !_showMobileChat),
+              ),
+              if (_messages.isNotEmpty)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: AppColors.brandPink,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${_messages.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 8),
+
+          // 6. Prominent Mobile "NEXT ⚡" Button (Instant Stranger Skip)
+          Expanded(
+            child: InkWell(
+              onTap: _onSkipToNext,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.brandPink.withOpacity(0.4),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+                    SizedBox(width: 4),
+                    Text(
+                      'NEXT',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Top Navigation Bar (Modern pills and controls)
@@ -1765,9 +2029,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               ),
             ),
 
-          // Bottom Left: "You" Pill with Mic Mute Status Indicator
+          // "You" Pill with Mic Mute Status Indicator (top on mobile so dock doesn't cover it)
           Positioned(
-            bottom: 14,
+            top: isMobile ? 12 : null,
+            bottom: isMobile ? null : 14,
             left: 14,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1800,47 +2065,41 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             ),
           ),
 
-          // Bottom Right: Flip Camera, Video On/Off & Mic Controls
-          Positioned(
-            bottom: 12,
-            right: 12,
-            child: Row(
-              children: [
-                _buildCircularControl(
-                  icon: _liveKit.isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                  isAlert: _liveKit.isMicMuted,
-                  onTap: () async {
-                    await _liveKit.toggleMicrophone();
-                    setState(() {});
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildCircularControl(
-                  icon: _liveKit.isVideoMuted ? Icons.videocam_off_rounded : Icons.videocam_rounded,
-                  isAlert: _liveKit.isVideoMuted,
-                  onTap: () async {
-                    await _liveKit.toggleVideo();
-                    setState(() {});
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildCircularControl(
-                  icon: Icons.flip_camera_ios_rounded,
-                  onTap: () async {
-                    await _liveKit.flipCamera();
-                    setState(() {});
-                  },
-                ),
-                if (isMobile) ...[
+          // Bottom Right: Flip Camera, Video On/Off & Mic Controls (Desktop only - mobile has dedicated bottom dock)
+          if (!isMobile)
+            Positioned(
+              bottom: 12,
+              right: 12,
+              child: Row(
+                children: [
+                  _buildCircularControl(
+                    icon: _liveKit.isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                    isAlert: _liveKit.isMicMuted,
+                    onTap: () async {
+                      await _liveKit.toggleMicrophone();
+                      setState(() {});
+                    },
+                  ),
                   const SizedBox(width: 8),
                   _buildCircularControl(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    onTap: () => setState(() => _showMobileChat = !_showMobileChat),
+                    icon: _liveKit.isVideoMuted ? Icons.videocam_off_rounded : Icons.videocam_rounded,
+                    isAlert: _liveKit.isVideoMuted,
+                    onTap: () async {
+                      await _liveKit.toggleVideo();
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _buildCircularControl(
+                    icon: Icons.flip_camera_ios_rounded,
+                    onTap: () async {
+                      await _liveKit.flipCamera();
+                      setState(() {});
+                    },
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1958,10 +2217,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               ),
             ),
 
-          // Top Left Overlay: Avatar, Name, Location, Heart, Badges
+          // Top Left Overlay: Avatar, Name, Location, Heart, Badges (positioned below mobile header on mobile)
           if (!_isSearchingNext)
             Positioned(
-              top: 14,
+              top: isMobile ? 54 : 14,
               left: 14,
               child: Row(
                 children: [
@@ -2027,21 +2286,22 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
-
-                  // Flag / Report Icon
-                  InkWell(
-                    onTap: _onReportUser,
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: const BoxDecoration(
-                        color: Colors.black54,
-                        shape: BoxShape.circle,
+                  if (!isMobile) ...[
+                    const SizedBox(width: 6),
+                    // Flag / Report Icon (on mobile, flag is in top floating header)
+                    InkWell(
+                      onTap: _onReportUser,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.flag_rounded, color: Colors.white70, size: 16),
                       ),
-                      child: const Icon(Icons.flag_rounded, color: Colors.white70, size: 16),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -2070,11 +2330,12 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             ),
           ),
 
-          // Bottom Right: Quick Gift + Big Skip/Next Button
-          Positioned(
-            bottom: 14,
-            right: 14,
-            child: Row(
+          // Bottom Right: Quick Gift + Big Skip/Next Button (Desktop only - mobile has bottom dock)
+          if (!isMobile)
+            Positioned(
+              bottom: 14,
+              right: 14,
+              child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!_isSearchingNext) ...[

@@ -6,7 +6,6 @@ import 'package:monkey_omegle_app/features/call/video_call_screen.dart';
 import 'package:monkey_omegle_app/models/user_profile.dart';
 import 'package:monkey_omegle_app/services/livekit_service.dart';
 import 'package:monkey_omegle_app/services/matchmaking_service.dart';
-import 'package:monkey_omegle_app/services/supabase_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -80,7 +79,7 @@ void main() {
         isAgeVerified: true,
       );
 
-      final match = MatchResult(
+      const match = MatchResult(
         roomId: 'mock_mic_room',
         token: 'mock_mic_token',
         peerId: 'peer_stranger_1',
@@ -88,7 +87,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ProviderScope(
+        const ProviderScope(
           child: MaterialApp(
             home: VideoCallScreen(
               myProfile: testUser,
@@ -147,7 +146,7 @@ void main() {
         isAgeVerified: true,
       );
 
-      final match = MatchResult(
+      const match = MatchResult(
         roomId: 'mock_video_room',
         token: 'mock_video_token',
         peerId: 'peer_stranger_2',
@@ -155,7 +154,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ProviderScope(
+        const ProviderScope(
           child: MaterialApp(
             home: VideoCallScreen(
               myProfile: testUser,
