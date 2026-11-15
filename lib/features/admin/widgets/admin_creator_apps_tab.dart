@@ -275,55 +275,134 @@ class _AdminCreatorAppsTabState extends ConsumerState<AdminCreatorAppsTab> {
 
           const SizedBox(height: 14),
 
-          // 18+ Verification & ID Details
+          // Applicant Comprehensive KYC Data Grid
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color(0xFF0F0F1A),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.verified_user_rounded, color: Colors.greenAccent, size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  'Age: ${app.ageYears} yrs (Adult 18+ Confirmed)',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                const Row(
+                  children: [
+                    Icon(Icons.badge_rounded, color: AppColors.brandPink, size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'APPLICANT KYC DOSSIER',
+                      style: TextStyle(color: AppColors.brandPink, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                Text(
-                  app.idType.name.toUpperCase(),
-                  style: const TextStyle(color: AppColors.brandCyan, fontSize: 11, fontWeight: FontWeight.bold),
+                const Divider(color: Colors.white10, height: 16),
+                _buildDossierRow('Full Legal Name', app.fullName, Icons.person_rounded),
+                const SizedBox(height: 6),
+                _buildDossierRow(
+                  'Date of Birth',
+                  '${app.dateOfBirth.year}-${app.dateOfBirth.month.toString().padLeft(2, '0')}-${app.dateOfBirth.day.toString().padLeft(2, '0')} (Age: ${app.ageYears} yrs • Adult 18+)',
+                  Icons.cake_rounded,
+                  highlightGreen: true,
                 ),
+                const SizedBox(height: 6),
+                _buildDossierRow('Nationality / Country', app.country, Icons.public_rounded),
+                const SizedBox(height: 6),
+                _buildDossierRow('ID Document Type', app.idType.displayName, Icons.credit_card_rounded),
+                const SizedBox(height: 6),
+                _buildDossierRow('Applicant User ID', app.userId, Icons.fingerprint_rounded),
               ],
             ),
           ),
 
+          const SizedBox(height: 12),
+
+          // ID Documents & Facial Verification Previews
+          const Text(
+            'GOVERNMENT ID & FACIAL VERIFICATION IMAGES',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDocumentPreviewTile(
+                  title: 'Front ID',
+                  docUrl: app.idDocumentFrontUrl,
+                  icon: Icons.credit_card_rounded,
+                  onTap: () => _showDocumentInspectionDialog(context, 'Front ID Document', app.idDocumentFrontUrl, app),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (app.idDocumentBackUrl != null && app.idDocumentBackUrl!.isNotEmpty) ...[
+                Expanded(
+                  child: _buildDocumentPreviewTile(
+                    title: 'Back ID',
+                    docUrl: app.idDocumentBackUrl!,
+                    icon: Icons.flip_rounded,
+                    onTap: () => _showDocumentInspectionDialog(context, 'Back ID Document', app.idDocumentBackUrl!, app),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: _buildDocumentPreviewTile(
+                  title: 'Selfie Check',
+                  docUrl: app.selfieUrl,
+                  icon: Icons.face_retouching_natural_rounded,
+                  onTap: () => _showDocumentInspectionDialog(context, 'Facial Selfie Verification', app.selfieUrl, app),
+                ),
+              ),
+            ],
+          ),
+
           if (app.bio != null && app.bio!.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              app.bio!,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F0F1A),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Creator Bio / Content Statement:', style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(
+                    app.bio!,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ],
 
           if (app.socialLinks.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            const Text('Social Media Handles:', style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
             Wrap(
               spacing: 6,
               runSpacing: 4,
               children: app.socialLinks.entries.map((entry) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.white10,
                     borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white12),
                   ),
-                  child: Text(
-                    '${entry.key}: ${entry.value}',
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.link_rounded, size: 12, color: AppColors.brandPink),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${entry.key}: ${entry.value}',
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ),
                 );
               }).toList(),
@@ -376,6 +455,142 @@ class _AdminCreatorAppsTabState extends ConsumerState<AdminCreatorAppsTab> {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDossierRow(String label, String value, IconData icon, {bool highlightGreen = false}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(icon, size: 14, color: highlightGreen ? Colors.greenAccent : AppColors.textMuted),
+        const SizedBox(width: 6),
+        Text('$label: ', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: highlightGreen ? Colors.greenAccent : Colors.white,
+              fontSize: 12,
+              fontWeight: highlightGreen ? FontWeight.bold : FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDocumentPreviewTile({
+    required String title,
+    required String docUrl,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F0F1A),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: AppColors.brandCyan, size: 22),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Tap to Inspect',
+              style: TextStyle(color: AppColors.brandPink, fontSize: 9, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDocumentInspectionDialog(BuildContext context, String title, String docUrl, CreatorApplication app) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141424),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.verified_user_rounded, color: AppColors.brandCyan, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Applicant: ${app.fullName} (${app.country})', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            Text('ID Document: ${app.idType.displayName}', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              height: 200,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A14),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.document_scanner_rounded, size: 48, color: AppColors.brandPink),
+                    const SizedBox(height: 8),
+                    Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        docUrl,
+                        style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'monospace'),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('Verified Image Attachment', style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close Inspection', style: TextStyle(color: Colors.white70)),
+          ),
         ],
       ),
     );

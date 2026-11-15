@@ -83,7 +83,7 @@ class AppConfig {
   static String get appTagline =>
       _getEnv('APP_TAGLINE', fallback: 'Meet new people instantly over live video');
 
-  // Default interests for Monkey mode
+  // Default interests for Baatkry mode
   static const List<String> availableInterests = [
     'Gaming',
     'Music',

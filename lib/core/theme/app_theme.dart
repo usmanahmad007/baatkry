@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AppColors {
   AppColors._();
@@ -113,22 +114,37 @@ class AppTheme {
 
   static final ValueNotifier<ThemeMode> themeModeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
 
+  static Future<void> loadSavedTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('app_theme_mode');
+      if (saved != null) {
+        if (saved == 'dark') themeModeNotifier.value = ThemeMode.dark;
+        if (saved == 'light') themeModeNotifier.value = ThemeMode.light;
+        if (saved == 'system') themeModeNotifier.value = ThemeMode.system;
+      }
+    } catch (_) {}
+  }
+
   static void cycleThemeMode() {
     switch (themeModeNotifier.value) {
       case ThemeMode.system:
-        themeModeNotifier.value = ThemeMode.dark;
+        setThemeMode(ThemeMode.dark);
         break;
       case ThemeMode.dark:
-        themeModeNotifier.value = ThemeMode.light;
+        setThemeMode(ThemeMode.light);
         break;
       case ThemeMode.light:
-        themeModeNotifier.value = ThemeMode.system;
+        setThemeMode(ThemeMode.system);
         break;
     }
   }
 
   static void setThemeMode(ThemeMode mode) {
     themeModeNotifier.value = mode;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('app_theme_mode', mode.name);
+    }).catchError((_) {});
   }
 
   static ThemeData get darkTheme {

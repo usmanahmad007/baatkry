@@ -143,6 +143,8 @@ class UserReport {
       'resolved_by': resolvedBy,
       'resolved_at': resolvedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
+      'reporter_name': reporterName,
+      'reported_name': reportedName,
     };
   }
 }

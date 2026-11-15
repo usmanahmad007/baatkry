@@ -6,6 +6,8 @@ import 'package:monkey_omegle_app/services/rate_limiter.dart';
 import 'package:monkey_omegle_app/services/supabase_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('UserReport Model Tests', () {
     test('UserReport parses from Supabase map correctly and checks status predicates', () {
       final map = {

@@ -27,29 +27,44 @@ class NetworkService {
 
   /// Check whether the device currently has active internet connectivity
   Future<bool> hasInternetConnection({Duration timeout = const Duration(seconds: 3)}) async {
-    // 1. On Web: Use browser online status & CORS-compliant Supabase ping
+    // 1. On Web: Browser environment connectivity check
     if (kIsWeb) {
-      if (!isBrowserOnline()) {
-        _updateOnlineState(false);
-        return false;
+      // Authoritative first check: If browser's window.navigator.onLine reports true,
+      // return immediately without triggering any cross-origin network pings.
+      if (isBrowserOnline()) {
+        _updateOnlineState(true);
+        return true;
       }
 
-      if (AppConfig.supabaseUrl.isNotEmpty) {
-        try {
-          final uri = Uri.parse(AppConfig.supabaseUrl);
-          final response = await http.get(uri).timeout(timeout);
-          if (response.statusCode > 0) {
-            _updateOnlineState(true);
-            return true;
+      // If navigator.onLine returned false (can happen on localhost/VPNs),
+      // perform fallback CORS-compliant ping to verify actual reachability
+      try {
+        final uri = Uri.parse('https://api.github.com');
+        final response = await http.get(uri).timeout(timeout);
+        if (response.statusCode > 0) {
+          _updateOnlineState(true);
+          return true;
+        }
+      } catch (_) {
+        // Fall back to Supabase REST endpoint which carries Access-Control-Allow-Origin: *
+        if (AppConfig.supabaseUrl.isNotEmpty) {
+          try {
+            final uri = Uri.parse('${AppConfig.supabaseUrl}/rest/v1/');
+            final response = await http.get(uri, headers: {
+              'apikey': AppConfig.supabaseAnonKey,
+            }).timeout(timeout);
+            if (response.statusCode > 0) {
+              _updateOnlineState(true);
+              return true;
+            }
+          } catch (_) {
+            // Both pings failed
           }
-        } catch (_) {
-          // Fall back to browser state if Supabase had a transient issue
         }
       }
 
-      final browserOnline = isBrowserOnline();
-      _updateOnlineState(browserOnline);
-      return browserOnline;
+      _updateOnlineState(false);
+      return false;
     }
 
     // 2. On Native Mobile / Desktop: Fast DNS lookup check first
@@ -213,43 +228,61 @@ class _NoInternetConnectionDialogState extends State<_NoInternetConnectionDialog
       ),
       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [
-        Row(
+        Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  side: BorderSide(color: AppColors.border(context)),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      side: BorderSide(color: AppColors.border(context)),
+                    ),
+                    child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
                 ),
-                child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isChecking ? null : _checkAgain,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.brandIndigo,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: _isChecking
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.refresh_rounded, size: 18),
+                              SizedBox(width: 6),
+                              Text('Retry', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: _isChecking ? null : _checkAgain,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.brandIndigo,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(
+                'Continue anyway',
+                style: TextStyle(
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.underline,
                 ),
-                child: _isChecking
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.refresh_rounded, size: 18),
-                          SizedBox(width: 6),
-                          Text('Retry', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
               ),
             ),
           ],

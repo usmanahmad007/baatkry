@@ -3,13 +3,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/creator_application.dart';
+import '../../services/supabase_service.dart';
 import 'creator_application_modal.dart';
 import 'creator_dashboard_screen.dart';
 
 class CreatorStatusModal extends ConsumerWidget {
   const CreatorStatusModal({super.key});
 
-  static Future<void> show(BuildContext context) {
+  static Future<void> show(BuildContext context) async {
+    final uid = SupabaseService.instance.currentProfile?.id;
+    if (uid != null) {
+      final isCreator = await SupabaseService.instance.checkIsCreator(uid);
+      if (isCreator && context.mounted) {
+        CreatorDashboardScreen.show(context);
+        return;
+      }
+      final app = await SupabaseService.instance.fetchMyCreatorApplication();
+      if (app != null && app.isApproved && context.mounted) {
+        CreatorDashboardScreen.show(context);
+        return;
+      }
+    }
+    if (!context.mounted) return;
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -105,6 +120,12 @@ class CreatorStatusModal extends ConsumerWidget {
                   final isApproved = isCreatorAsync.valueOrNull == true || app?.isApproved == true;
 
                   if (isApproved) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                        CreatorDashboardScreen.show(context);
+                      }
+                    });
                     return _buildApprovedView(context);
                   } else if (app != null && app.isPending) {
                     return _buildPendingView(context, app);

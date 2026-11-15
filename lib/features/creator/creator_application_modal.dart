@@ -5,11 +5,26 @@ import '../../core/theme/app_theme.dart';
 import '../../models/creator_application.dart';
 import '../../services/supabase_service.dart';
 import '../auth/auth_modal.dart';
+import 'creator_dashboard_screen.dart';
 
 class CreatorApplicationModal extends ConsumerStatefulWidget {
   const CreatorApplicationModal({super.key});
 
-  static Future<void> show(BuildContext context) {
+  static Future<void> show(BuildContext context) async {
+    final uid = SupabaseService.instance.currentProfile?.id;
+    if (uid != null) {
+      final isCreator = await SupabaseService.instance.checkIsCreator(uid);
+      if (isCreator && context.mounted) {
+        CreatorDashboardScreen.show(context);
+        return;
+      }
+      final app = await SupabaseService.instance.fetchMyCreatorApplication();
+      if (app != null && app.isApproved && context.mounted) {
+        CreatorDashboardScreen.show(context);
+        return;
+      }
+    }
+    if (!context.mounted) return;
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,

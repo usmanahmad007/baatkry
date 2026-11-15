@@ -9,6 +9,12 @@ class AdminUser {
   final int coins;
   final bool isBanned;
   final String? banReason;
+  final bool isRestricted;
+  final String? restrictionReason;
+  final String? restrictionType; // 'chat_mute', 'camera_disabled', 'matchmaking_cooldown', 'shadow_flagged'
+  final DateTime? restrictedUntil;
+  final bool isVip;
+  final int reportsCount;
   final List<String> roles;
   final DateTime createdAt;
   final DateTime? lastActiveAt;
@@ -23,6 +29,12 @@ class AdminUser {
     this.coins = 0,
     this.isBanned = false,
     this.banReason,
+    this.isRestricted = false,
+    this.restrictionReason,
+    this.restrictionType,
+    this.restrictedUntil,
+    this.isVip = false,
+    this.reportsCount = 0,
     this.roles = const ['user'],
     required this.createdAt,
     this.lastActiveAt,
@@ -31,6 +43,25 @@ class AdminUser {
   bool get isAdmin => roles.contains('admin') || roles.contains('super_admin');
   bool get isCreator => roles.contains('creator');
   bool get isModerator => roles.contains('moderator');
+
+  bool get isCurrentlyRestricted =>
+      isRestricted && (restrictedUntil == null || restrictedUntil!.isAfter(DateTime.now()));
+
+  String get restrictionDisplayName {
+    if (!isCurrentlyRestricted) return 'None';
+    switch (restrictionType) {
+      case 'chat_mute':
+        return 'Chat Muted 🔇';
+      case 'camera_disabled':
+        return 'Camera Disabled 📷';
+      case 'matchmaking_cooldown':
+        return 'Cooldown ⏳';
+      case 'shadow_flagged':
+        return 'Flagged ⚠️';
+      default:
+        return 'Restricted ⚠️';
+    }
+  }
 
   AdminUser copyWith({
     String? id,
@@ -42,6 +73,12 @@ class AdminUser {
     int? coins,
     bool? isBanned,
     String? banReason,
+    bool? isRestricted,
+    String? restrictionReason,
+    String? restrictionType,
+    DateTime? restrictedUntil,
+    bool? isVip,
+    int? reportsCount,
     List<String>? roles,
     DateTime? createdAt,
     DateTime? lastActiveAt,
@@ -56,6 +93,12 @@ class AdminUser {
       coins: coins ?? this.coins,
       isBanned: isBanned ?? this.isBanned,
       banReason: banReason ?? this.banReason,
+      isRestricted: isRestricted ?? this.isRestricted,
+      restrictionReason: restrictionReason ?? this.restrictionReason,
+      restrictionType: restrictionType ?? this.restrictionType,
+      restrictedUntil: restrictedUntil ?? this.restrictedUntil,
+      isVip: isVip ?? this.isVip,
+      reportsCount: reportsCount ?? this.reportsCount,
       roles: roles ?? this.roles,
       createdAt: createdAt ?? this.createdAt,
       lastActiveAt: lastActiveAt ?? this.lastActiveAt,
@@ -84,6 +127,14 @@ class AdminUser {
       coins: (map['coins'] as num?)?.toInt() ?? 0,
       isBanned: map['is_banned'] as bool? ?? false,
       banReason: map['ban_reason'] as String?,
+      isRestricted: map['is_restricted'] as bool? ?? false,
+      restrictionReason: map['restriction_reason'] as String?,
+      restrictionType: map['restriction_type'] as String?,
+      restrictedUntil: map['restricted_until'] != null
+          ? DateTime.tryParse(map['restricted_until'].toString())
+          : null,
+      isVip: map['is_vip'] as bool? ?? false,
+      reportsCount: (map['reports_count'] as num?)?.toInt() ?? 0,
       roles: parsedRoles,
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'].toString()) ?? DateTime.now()
@@ -105,6 +156,12 @@ class AdminUser {
       'coins': coins,
       'is_banned': isBanned,
       'ban_reason': banReason,
+      'is_restricted': isRestricted,
+      'restriction_reason': restrictionReason,
+      'restriction_type': restrictionType,
+      'restricted_until': restrictedUntil?.toIso8601String(),
+      'is_vip': isVip,
+      'reports_count': reportsCount,
       'roles': roles,
       'created_at': createdAt.toIso8601String(),
       'last_active_at': lastActiveAt?.toIso8601String(),

@@ -178,7 +178,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Active Video Call Screen'), findsOneWidget);
-      expect(find.text('+1000 Coins'), findsOneWidget);
+      expect(find.text('1000 Coins'), findsOneWidget);
       expect(find.text('Alex sent you a Royal Crown!'), findsOneWidget);
     });
   });

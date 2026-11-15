@@ -8,6 +8,7 @@ import 'package:livekit_client/livekit_client.dart';
 
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/vip_avatar.dart';
 import '../../models/chat_message.dart';
 import '../../models/gift_transaction.dart';
 import '../../models/user_profile.dart';
@@ -71,9 +72,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   int _guestTotalSecondsUsed = 0; // Total guest seconds across all calls
   late int _coinsRemaining;
   Timer? _callTimer;
-  bool _isLiked = false;
   bool _isTheaterMode = false;
   bool _showMobileChat = false;
+  String _friendStatus = 'none'; // 'none', 'pending_sent', 'pending_received', 'friends'
+  bool _isSendingFriendRequest = false;
 
   late String _activeGenderFilter;
   late bool _isGenderFiltered;
@@ -85,6 +87,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     super.initState();
     _activeMatchResult = widget.matchResult;
     _activeCountryFilter = widget.countryFilter;
+    _checkFriendStatus();
     final filter = widget.genderFilter.toLowerCase().trim();
     final requestedVip = filter.isNotEmpty && filter != 'everyone' && filter != 'unspecified';
     final initialCoins = SupabaseService.instance.currentProfile?.coins ?? widget.myProfile.coins;
@@ -726,6 +729,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
     _chatSub = _liveKit.chatMessageStream.listen((msg) {
       if (mounted) {
+        if (msg.text.startsWith('__FRIEND_REQ__')) {
+          _handleIncomingFriendRequestInCall(msg);
+          return;
+        }
         setState(() => _messages.add(msg));
         _scrollChatToBottom();
       }
@@ -763,7 +770,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
           senderId: event.senderId,
           senderName: 'System',
           text: isMe
-              ? '🎁 You sent ${event.giftName} ${event.emoji} (-${event.coins} Coins)'
+              ? '🎁 You sent ${event.giftName} ${event.emoji} (${event.coins} Coins)'
               : '🎁 ${event.senderName} sent you ${event.giftName} ${event.emoji} (+${event.coins} Coins credited!)',
           timestamp: event.timestamp,
           isMe: isMe,
@@ -865,7 +872,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       _remoteVideoTrack = null;
       _messages.clear();
       _callElapsedSeconds = 0;
-      _isLiked = false;
+      _friendStatus = 'none';
       _localVideoTrack = _liveKit.localCameraTrack; // keeps camera uninterrupted!
     });
 
@@ -892,9 +899,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
       setState(() {
         _activeMatchResult = newResult;
+        _friendStatus = 'none';
       });
 
       await _connectToRoom(newResult);
+      await _checkFriendStatus();
 
       if (mounted) {
         setState(() {
@@ -1191,6 +1200,112 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       _textController.clear();
     }
     _scrollChatToBottom();
+  }
+
+  Future<void> _checkFriendStatus() async {
+    if (_activeMatchResult.peerId.isNotEmpty) {
+      try {
+        final status = await SupabaseService.instance.checkFriendStatus(_activeMatchResult.peerId);
+        if (mounted) {
+          setState(() => _friendStatus = status);
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _handleSendFriendRequest() async {
+    if (_isSendingFriendRequest) return;
+    final currentProf = SupabaseService.instance.currentProfile ?? widget.myProfile;
+    if (currentProf.isAnonymous) {
+      AuthModal.show(context, onAuthSuccess: () {
+        _checkFriendStatus();
+      });
+      return;
+    }
+
+    setState(() => _isSendingFriendRequest = true);
+
+    try {
+      final res = await SupabaseService.instance.sendFriendRequest(
+        receiverId: _activeMatchResult.peerId,
+        receiverName: _activeMatchResult.peerName,
+        isDuringVideoChat: true,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isSendingFriendRequest = false;
+          _friendStatus = res['status'] == 'accepted' ? 'friends' : 'pending_sent';
+        });
+
+        // Transmit friend request signal over LiveKit WebRTC Data Channel
+        _liveKit.sendChatMessage(
+          '__FRIEND_REQ__:${currentProf.id}:${currentProf.nickname}',
+          myId: currentProf.id,
+          myName: currentProf.nickname,
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.brandIndigo,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+            content: Row(
+              children: [
+                const Icon(Icons.person_add_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    res['message']?.toString() ?? 'Friend request sent to ${_activeMatchResult.peerName}!',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSendingFriendRequest = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: AppColors.danger, content: Text('$e')),
+        );
+      }
+    }
+  }
+
+  void _handleIncomingFriendRequestInCall(ChatMessage msg) {
+    if (mounted) {
+      setState(() => _friendStatus = 'pending_received');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.brandIndigo,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+          content: Row(
+            children: [
+              const Icon(Icons.favorite_rounded, color: AppColors.brandPink, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text('${_activeMatchResult.peerName} sent you a friend request!')),
+            ],
+          ),
+          action: SnackBarAction(
+            label: 'Accept',
+            textColor: Colors.white,
+            onPressed: () async {
+              final requests = await SupabaseService.instance.fetchFriendRequests();
+              final matching = requests.where((r) => r.senderId == _activeMatchResult.peerId).toList();
+              if (matching.isNotEmpty) {
+                await SupabaseService.instance.respondToFriendRequest(requestId: matching.first.id, accept: true);
+                if (mounted) {
+                  setState(() => _friendStatus = 'friends');
+                }
+              }
+            },
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -1531,7 +1646,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               setState(() {});
             },
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
 
           // 2. Video Camera On / Off
           _buildCircularControl(
@@ -1542,7 +1657,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               setState(() {});
             },
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
 
           // 3. Flip Camera
           _buildCircularControl(
@@ -1554,9 +1669,28 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               }
             },
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
 
-          // 4. Send Gift
+          // 4. Add Friend (Strictly during active video chat)
+          _buildCircularControl(
+            icon: _friendStatus == 'friends'
+                ? Icons.people_alt_rounded
+                : (_friendStatus == 'pending_sent'
+                    ? Icons.hourglass_top_rounded
+                    : Icons.person_add_alt_1_rounded),
+            color: _friendStatus == 'friends'
+                ? AppColors.success
+                : (_friendStatus == 'pending_sent' ? AppColors.coinGold.withOpacity(0.3) : null),
+            iconColor: _friendStatus == 'friends'
+                ? Colors.white
+                : (_friendStatus == 'pending_sent' ? AppColors.coinGold : Colors.white),
+            onTap: (_friendStatus == 'friends' || _friendStatus == 'pending_sent' || _isSendingFriendRequest)
+                ? () {}
+                : _handleSendFriendRequest,
+          ),
+          const SizedBox(width: 4),
+
+          // 5. Send Gift
           _buildCircularControl(
             icon: Icons.card_giftcard_rounded,
             onTap: () {
@@ -1568,9 +1702,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               );
             },
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
 
-          // 5. Text Chat with unread badge
+          // 6. Text Chat with unread badge
           Stack(
             clipBehavior: Clip.none,
             children: [
@@ -1596,15 +1730,15 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                 ),
             ],
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
-          // 6. Prominent Mobile "NEXT ⚡" Button (Instant Stranger Skip)
+          // 7. Prominent Mobile "NEXT ⚡" Button (Instant Stranger Skip)
           Expanded(
             child: InkWell(
               onTap: _onSkipToNext,
               borderRadius: BorderRadius.circular(20),
               child: Container(
-                height: 42,
+                height: 40,
                 decoration: BoxDecoration(
                   gradient: AppColors.primaryGradient,
                   borderRadius: BorderRadius.circular(20),
@@ -1616,21 +1750,29 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                     ),
                   ],
                 ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
-                    SizedBox(width: 4),
-                    Text(
-                      'NEXT',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                        letterSpacing: 0.5,
+                child: const Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
+                          SizedBox(width: 2),
+                          Text(
+                            'NEXT',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -1941,13 +2083,12 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               const SizedBox(width: 10),
 
               // User Avatar
-              CircleAvatar(
+              VipAvatar(
                 radius: 16,
-                backgroundColor: AppColors.brandIndigo,
-                child: Text(
-                  widget.myProfile.nickname.isNotEmpty ? widget.myProfile.nickname[0].toUpperCase() : 'U',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                ),
+                nickname: widget.myProfile.nickname,
+                avatarUrl: widget.myProfile.avatarUrl,
+                isVip: widget.myProfile.isVip,
+                showVipBadge: true,
               ),
             ],
           ),
@@ -2226,6 +2367,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             Positioned(
               top: isMobile ? 54 : 14,
               left: 14,
+              right: 14,
               child: Row(
                 children: [
                   CircleAvatar(
@@ -2239,54 +2381,85 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                   const SizedBox(width: 8),
 
                   // Name & Location
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _activeMatchResult.peerName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _activeMatchResult.peerName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      Text(
-                        '${_activeMatchResult.peerCountryFlag} ${_activeMatchResult.peerCountry} • Online',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                        Text(
+                          '${_activeMatchResult.peerCountryFlag} ${_activeMatchResult.peerCountry} • Online',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                            shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 10),
 
-                  // Heart Button
+                  // Add Friend Action Button (Enforced: during video chat only)
                   InkWell(
-                    onTap: () {
-                      setState(() => _isLiked = !_isLiked);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          backgroundColor: AppColors.brandPink,
-                          content: Text(_isLiked ? 'Added to friends!' : 'Removed from friends.'),
-                          duration: const Duration(seconds: 1),
-                        ),
-                      );
-                    },
+                    onTap: (_friendStatus == 'friends' || _friendStatus == 'pending_sent' || _isSendingFriendRequest)
+                        ? null
+                        : _handleSendFriendRequest,
                     borderRadius: BorderRadius.circular(16),
                     child: Container(
-                      padding: const EdgeInsets.all(5),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        gradient: _isLiked ? AppColors.primaryGradient : null,
-                        color: _isLiked ? null : Colors.black54,
-                        shape: BoxShape.circle,
+                        color: _friendStatus == 'friends'
+                            ? AppColors.success.withOpacity(0.25)
+                            : (_friendStatus == 'pending_sent'
+                                ? AppColors.coinGold.withOpacity(0.25)
+                                : AppColors.brandPink.withOpacity(0.35)),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _friendStatus == 'friends'
+                              ? AppColors.success
+                              : (_friendStatus == 'pending_sent' ? AppColors.coinGold : Colors.white30),
+                        ),
                       ),
-                      child: Icon(
-                        _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                        color: Colors.white,
-                        size: 16,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _friendStatus == 'friends'
+                                ? Icons.check_circle_rounded
+                                : (_friendStatus == 'pending_sent'
+                                    ? Icons.hourglass_top_rounded
+                                    : Icons.person_add_rounded),
+                            color: _friendStatus == 'friends'
+                                ? AppColors.success
+                                : (_friendStatus == 'pending_sent' ? AppColors.coinGold : Colors.white),
+                            size: 13,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _friendStatus == 'friends'
+                                ? 'Friends'
+                                : (_friendStatus == 'pending_sent' ? 'Sent' : 'Add Friend'),
+                            style: TextStyle(
+                              color: _friendStatus == 'friends'
+                                  ? AppColors.success
+                                  : (_friendStatus == 'pending_sent' ? AppColors.coinGold : Colors.white),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -2343,6 +2516,49 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!_isSearchingNext) ...[
+                  // Desktop Add Friend Button (Active video chat only)
+                  InkWell(
+                    onTap: (_friendStatus == 'friends' || _friendStatus == 'pending_sent' || _isSendingFriendRequest)
+                        ? null
+                        : _handleSendFriendRequest,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _friendStatus == 'friends'
+                            ? AppColors.success.withOpacity(0.3)
+                            : (_friendStatus == 'pending_sent'
+                                ? AppColors.coinGold.withOpacity(0.3)
+                                : Colors.black54),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _friendStatus == 'friends'
+                              ? AppColors.success
+                              : (_friendStatus == 'pending_sent'
+                                  ? AppColors.coinGold
+                                  : Colors.white24),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          _friendStatus == 'friends'
+                              ? Icons.people_alt_rounded
+                              : (_friendStatus == 'pending_sent'
+                                  ? Icons.hourglass_top_rounded
+                                  : Icons.person_add_alt_1_rounded),
+                          color: _friendStatus == 'friends'
+                              ? AppColors.success
+                              : (_friendStatus == 'pending_sent'
+                                  ? AppColors.coinGold
+                                  : Colors.white),
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   InkWell(
                     onTap: () {
                       GiftModal.show(
@@ -2434,13 +2650,12 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             ),
             child: Row(
               children: [
-                CircleAvatar(
+                VipAvatar(
                   radius: 14,
-                  backgroundColor: AppColors.brandIndigo,
-                  child: Text(
-                    widget.myProfile.nickname.isNotEmpty ? widget.myProfile.nickname[0].toUpperCase() : 'Y',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
+                  nickname: widget.myProfile.nickname,
+                  avatarUrl: widget.myProfile.avatarUrl,
+                  isVip: widget.myProfile.isVip,
+                  showVipBadge: true,
                 ),
                 const SizedBox(width: 8),
 
@@ -2597,19 +2812,23 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     required IconData icon,
     required VoidCallback onTap,
     bool isAlert = false,
+    Color? color,
+    Color? iconColor,
+    double size = 36,
+    double iconSize = 18,
   }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        width: 38,
-        height: 38,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
-          color: isAlert ? AppColors.danger : Colors.black.withOpacity(0.65),
+          color: color ?? (isAlert ? AppColors.danger : Colors.black.withOpacity(0.65)),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white24),
         ),
-        child: Icon(icon, color: Colors.white, size: 18),
+        child: Icon(icon, color: iconColor ?? Colors.white, size: iconSize),
       ),
     );
   }

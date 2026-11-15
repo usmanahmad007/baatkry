@@ -215,10 +215,13 @@ class _GiftModalState extends ConsumerState<GiftModal> {
                         fontSize: 11,
                         color: AppColors.textSecondary,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
 
               // Coin Balance Pill & Top up
               GestureDetector(
@@ -311,28 +314,35 @@ class _GiftModalState extends ConsumerState<GiftModal> {
                       width: 22,
                       child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.black),
                     )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          isGuest
-                              ? 'Sign In with Google to Send'
-                              : !canAfford
-                                  ? 'Get Coins (${selected.coinPrice - userCoins} More Needed)'
-                                  : 'Send ${selected.emoji} ${selected.name} (${selected.coinPrice} Coins)',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: canAfford ? Colors.black : Colors.white,
-                          ),
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isGuest
+                                  ? 'Sign In with Google to Send'
+                                  : !canAfford
+                                      ? 'Get Coins (${selected.coinPrice - userCoins} More Needed)'
+                                      : 'Send ${selected.emoji} ${selected.name} (${selected.coinPrice} Coins)',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: canAfford ? Colors.black : Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              canAfford ? Icons.send_rounded : Icons.add_shopping_cart_rounded,
+                              size: 18,
+                              color: canAfford ? Colors.black : Colors.white,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Icon(
-                          canAfford ? Icons.send_rounded : Icons.add_shopping_cart_rounded,
-                          size: 18,
-                          color: canAfford ? Colors.black : Colors.white,
-                        ),
-                      ],
+                      ),
                     ),
             ),
           ),
@@ -347,9 +357,9 @@ class _GiftModalState extends ConsumerState<GiftModal> {
       itemCount: gifts.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.82,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 0.68,
       ),
       itemBuilder: (context, index) {
         final gift = gifts[index];
@@ -363,7 +373,7 @@ class _GiftModalState extends ConsumerState<GiftModal> {
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             decoration: BoxDecoration(
               gradient: isSelected
                   ? LinearGradient(
@@ -390,59 +400,64 @@ class _GiftModalState extends ConsumerState<GiftModal> {
                     ]
                   : null,
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (gift.badge != null)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 2),
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.vipGoldGradient,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      gift.badge!,
-                      style: const TextStyle(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.black,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (gift.badge != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.vipGoldGradient,
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                    ),
-                  )
-                else
-                  const SizedBox(height: 12),
-                Text(
-                  gift.emoji,
-                  style: const TextStyle(fontSize: 28),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  gift.name,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    color: Colors.white,
+                      child: Text(
+                        gift.badge!,
+                        style: const TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.black,
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(height: 6),
+                  Text(
+                    gift.emoji,
+                    style: const TextStyle(fontSize: 24),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.circle, size: 6, color: AppColors.coinGold),
-                    const SizedBox(width: 3),
-                    Text(
-                      '${gift.coinPrice}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.coinGold,
-                      ),
+                  const SizedBox(height: 3),
+                  Text(
+                    gift.name,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: Colors.white,
                     ),
-                  ],
-                ),
-              ],
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.circle, size: 6, color: AppColors.coinGold),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${gift.coinPrice}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.coinGold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );

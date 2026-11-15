@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/admin_provider.dart';
@@ -21,20 +22,20 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
     String? notes;
     String? txRef;
 
-    if (action == 'reject' || action == 'fail') {
+    if (action == 'reject' || action == 'fail' || action == 'cancel') {
       final textController = TextEditingController();
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1A1A2E),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Reject Withdrawal Request', style: TextStyle(color: Colors.white, fontSize: 16)),
+          title: const Text('Cancel / Reject Payout', style: TextStyle(color: Colors.white, fontSize: 16)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Rejecting this payout of ${tx.formattedAmount} will automatically restore \$${tx.amountUsd.toStringAsFixed(2)} back to ${tx.creatorName}\'s available balance.',
+                'Cancelling or rejecting this payout of ${tx.formattedAmount} will automatically restore \$${tx.amountUsd.toStringAsFixed(2)} back to ${tx.creatorName}\'s available balance.',
                 style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
               ),
               const SizedBox(height: 12),
@@ -43,7 +44,7 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
                 maxLines: 2,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: 'Reason (e.g., Invalid PayPal email, bank details mismatch)',
+                  hintText: 'Reason (e.g., Invalid PayPal, creator requested cancellation)',
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
                   fillColor: const Color(0xFF0F0F1A),
@@ -55,12 +56,12 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+              child: const Text('Back', style: TextStyle(color: Colors.white54)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-              child: const Text('Reject & Refund', style: TextStyle(color: Colors.white)),
+              child: const Text('Cancel & Refund', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -68,7 +69,7 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
 
       if (confirmed != true) return;
       notes = textController.text.trim();
-      if (notes.isEmpty) notes = 'Payout rejected by administrator';
+      if (notes.isEmpty) notes = 'Payout cancelled / rejected by administrator';
     } else if (action == 'complete') {
       final txRefController = TextEditingController();
       final confirmed = await showDialog<bool>(
@@ -353,9 +354,9 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Processing Fee', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                    const Text('Platform Fee (3%)', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
                     const SizedBox(height: 2),
-                    Text(tx.formattedFee, style: const TextStyle(color: AppColors.textMuted, fontSize: 14)),
+                    Text(tx.formattedFee, style: const TextStyle(color: Colors.orangeAccent, fontSize: 14, fontWeight: FontWeight.bold)),
                   ],
                 ),
                 Column(
@@ -370,13 +371,78 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
             ),
           ),
 
-          if (tx.payoutDetails.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Account: ${tx.payoutDetails['account'] ?? tx.payoutDetails['email'] ?? tx.payoutDetails.values.join(', ')}',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+          // Complete Payout Beneficiary Details (Bank, Account Title, Account / IBAN, SWIFT)
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F0F1A),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
             ),
-          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.account_balance_rounded, color: AppColors.brandCyan, size: 16),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'BENEFICIARY & BANK / IBAN DETAILS',
+                      style: TextStyle(color: AppColors.brandCyan, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        (tx.payoutDetails['method_display'] ?? tx.payoutMethod).toString().toUpperCase(),
+                        style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(color: Colors.white10, height: 16),
+                if ((tx.payoutDetails['bank_name']?.toString() ?? '').isNotEmpty) ...[
+                  _buildPayoutFieldRow(
+                    label: 'Bank Name',
+                    value: tx.payoutDetails['bank_name'].toString(),
+                    icon: Icons.business_rounded,
+                  ),
+                  const SizedBox(height: 6),
+                ],
+                _buildPayoutFieldRow(
+                  label: 'Account Title / Holder',
+                  value: tx.payoutDetails['account_title']?.toString() ?? tx.creatorName,
+                  icon: Icons.person_outline_rounded,
+                ),
+                const SizedBox(height: 6),
+                _buildPayoutFieldRow(
+                  label: 'Account Number / IBAN',
+                  value: tx.payoutDetails['account_number']?.toString() ??
+                      (tx.payoutDetails['iban']?.toString() ??
+                          (tx.payoutDetails['account']?.toString() ??
+                              (tx.payoutDetails['email']?.toString() ?? 'N/A'))),
+                  icon: Icons.numbers_rounded,
+                  copyable: true,
+                  context: context,
+                ),
+                if ((tx.payoutDetails['routing_code']?.toString() ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _buildPayoutFieldRow(
+                    label: 'SWIFT / BIC / Routing Code',
+                    value: tx.payoutDetails['routing_code'].toString(),
+                    icon: Icons.qr_code_rounded,
+                    copyable: true,
+                    context: context,
+                  ),
+                ],
+              ],
+            ),
+          ),
 
           if (tx.payoutTransactionReference != null) ...[
             const SizedBox(height: 6),
@@ -406,7 +472,7 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
                       side: const BorderSide(color: Colors.redAccent),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    child: const Text('Reject & Refund', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                    child: const Text('Cancel / Refund', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -424,21 +490,86 @@ class _AdminWithdrawalsTabState extends ConsumerState<AdminWithdrawalsTab> {
             ),
           ] else if (tx.isApproved) ...[
             const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isProcessing ? null : () => _reviewWithdrawal(tx, 'complete'),
-                icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
-                label: const Text('Mark as Completed & Settle', style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isProcessing ? null : () => _reviewWithdrawal(tx, 'reject'),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.redAccent),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Cancel & Refund', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: _isProcessing ? null : () => _reviewWithdrawal(tx, 'complete'),
+                    icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
+                    label: const Text('Mark Completed', style: TextStyle(color: Colors.white, fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildPayoutFieldRow({
+    required String label,
+    required String value,
+    required IconData icon,
+    bool copyable = false,
+    BuildContext? context,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(icon, size: 14, color: AppColors.textMuted),
+        const SizedBox(width: 6),
+        Text('$label: ', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (copyable && context != null && value.isNotEmpty && value != 'N/A') ...[
+          InkWell(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: AppColors.brandPink,
+                  duration: const Duration(seconds: 2),
+                  content: Text('Copied $label: $value'),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(4),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.copy_rounded, size: 12, color: AppColors.brandCyan),
+                  SizedBox(width: 2),
+                  Text('Copy', style: TextStyle(color: AppColors.brandCyan, fontSize: 10, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

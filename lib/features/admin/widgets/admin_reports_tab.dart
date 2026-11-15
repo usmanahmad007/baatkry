@@ -30,6 +30,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
       );
 
       ref.invalidate(adminReportsProvider);
+      ref.invalidate(adminUsersProvider(null));
       ref.invalidate(adminAuditLogsProvider);
 
       if (mounted) {
@@ -412,6 +413,19 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
                           icon: const Icon(Icons.block_rounded, size: 14),
                           label: const Text('Ban User', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           onPressed: () => _showActionDialog(report, 'Ban User Permanently', 'banned', AppColors.danger),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Restrict User
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF9800),
+                            side: const BorderSide(color: Color(0xFFFF9800)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          icon: const Icon(Icons.remove_circle_outline_rounded, size: 14),
+                          label: const Text('Restrict User', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          onPressed: () => _showActionDialog(report, 'Restrict User', 'restricted', const Color(0xFFFF9800)),
                         ),
                         const SizedBox(width: 8),
 

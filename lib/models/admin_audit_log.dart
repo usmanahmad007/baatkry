@@ -36,6 +36,16 @@ class AdminAuditLog {
         return 'Banned User Account';
       case 'unban_user':
         return 'Unbanned User Account';
+      case 'restrict_user':
+        return 'Restricted User Account';
+      case 'lift_restriction':
+        return 'Lifted User Restriction';
+      case 'adjust_coins':
+        return 'Adjusted User Coins';
+      case 'toggle_vip':
+        return 'Updated VIP Status';
+      case 'reset_gender_lock':
+        return 'Reset Gender Lock';
       case 'update_gift_pricing':
         return 'Updated Gift Pricing';
       case 'update_coin_package':

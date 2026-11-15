@@ -50,10 +50,17 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         title: const Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Creator Studio', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-            SizedBox(width: 8),
-            Icon(Icons.verified_rounded, color: AppColors.success, size: 20),
+            Flexible(
+              child: Text(
+                'Creator Studio',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            SizedBox(width: 6),
+            Icon(Icons.verified_rounded, color: AppColors.success, size: 18),
           ],
         ),
         leading: IconButton(
@@ -83,47 +90,123 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
                 _buildPolicyCard(rule),
                 const SizedBox(height: 18),
 
-                // 3. Tab Switcher: Gift Earnings vs Payout Requests
-                Row(
-                  children: [
-                    ChoiceChip(
-                      label: const Text('Gift Earnings'),
-                      selected: !_showingWithdrawalsTab,
-                      onSelected: (_) => setState(() => _showingWithdrawalsTab = false),
-                      selectedColor: AppColors.brandIndigo,
-                      backgroundColor: Colors.white10,
-                      labelStyle: TextStyle(
-                        color: !_showingWithdrawalsTab ? Colors.white : Colors.white70,
-                        fontWeight: !_showingWithdrawalsTab ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 12,
+                // 3. Tab Switcher: Gift Earnings vs Payout Requests (Overflow-proof segmented row)
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _showingWithdrawalsTab = false),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                            decoration: BoxDecoration(
+                              color: !_showingWithdrawalsTab ? AppColors.brandIndigo : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: !_showingWithdrawalsTab
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.brandIndigo.withOpacity(0.35),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.card_giftcard_rounded,
+                                    size: 16,
+                                    color: !_showingWithdrawalsTab ? Colors.white : Colors.white60,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Gift Earnings',
+                                    style: TextStyle(
+                                      color: !_showingWithdrawalsTab ? Colors.white : Colors.white70,
+                                      fontWeight: !_showingWithdrawalsTab ? FontWeight.bold : FontWeight.w500,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: const Text('Payout Requests'),
-                      selected: _showingWithdrawalsTab,
-                      onSelected: (_) => setState(() => _showingWithdrawalsTab = true),
-                      selectedColor: AppColors.coinGold,
-                      backgroundColor: Colors.white10,
-                      labelStyle: TextStyle(
-                        color: _showingWithdrawalsTab ? Colors.black : Colors.white70,
-                        fontWeight: _showingWithdrawalsTab ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 12,
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _showingWithdrawalsTab = true),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                            decoration: BoxDecoration(
+                              color: _showingWithdrawalsTab ? AppColors.coinGold : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: _showingWithdrawalsTab
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.coinGold.withOpacity(0.35),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.payments_outlined,
+                                    size: 16,
+                                    color: _showingWithdrawalsTab ? Colors.black87 : Colors.white60,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Payout Requests',
+                                    style: TextStyle(
+                                      color: _showingWithdrawalsTab ? Colors.black87 : Colors.white70,
+                                      fontWeight: _showingWithdrawalsTab ? FontWeight.bold : FontWeight.w500,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    if (!_showingWithdrawalsTab)
-                      Row(
-                        children: [
-                          _filterChip('All', 'all'),
-                          const SizedBox(width: 4),
-                          _filterChip('Avail', 'available'),
-                          const SizedBox(width: 4),
-                          _filterChip('Paid', 'withdrawn'),
-                        ],
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
+                if (!_showingWithdrawalsTab) ...[
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _filterChip('All Earnings', 'all'),
+                        const SizedBox(width: 8),
+                        _filterChip('Available', 'available'),
+                        const SizedBox(width: 8),
+                        _filterChip('Withdrawn', 'withdrawn'),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
 
                 // 4. Content view based on active tab
@@ -253,29 +336,36 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.success.withOpacity(0.3)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.lock_open_rounded, color: AppColors.success, size: 14),
-                    SizedBox(width: 6),
-                    Text(
-                      'AVAILABLE CASH BALANCE',
-                      style: TextStyle(
-                        color: AppColors.success,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.success.withOpacity(0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lock_open_rounded, color: AppColors.success, size: 14),
+                      SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'AVAILABLE CASH BALANCE',
+                          style: TextStyle(
+                            color: AppColors.success,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -310,11 +400,11 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _statColumn('Pending', wallet.formattedPending, Colors.white70),
+                Expanded(child: _statColumn('Pending', wallet.formattedPending, Colors.white70)),
                 Container(width: 1, height: 28, color: Colors.white12),
-                _statColumn('Lifetime', wallet.formattedLifetime, AppColors.coinGold),
+                Expanded(child: _statColumn('Lifetime', wallet.formattedLifetime, AppColors.coinGold)),
                 Container(width: 1, height: 28, color: Colors.white12),
-                _statColumn('Withdrawn', wallet.formattedWithdrawn, AppColors.brandBlue),
+                Expanded(child: _statColumn('Withdrawn', wallet.formattedWithdrawn, AppColors.brandBlue)),
               ],
             ),
           ),
@@ -374,9 +464,12 @@ class _CreatorDashboardScreenState extends ConsumerState<CreatorDashboardScreen>
             children: [
               Icon(Icons.pie_chart_rounded, color: AppColors.coinGold, size: 20),
               SizedBox(width: 8),
-              Text(
-                'Financial Split & Accounting Policy',
-                style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Text(
+                  'Financial Split & Accounting Policy',
+                  style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),

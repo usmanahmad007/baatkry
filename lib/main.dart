@@ -27,6 +27,9 @@ void main() async {
   // Initialize real-time presence tracking for authentic live users
   await PresenceService.instance.init();
 
+  // Load user saved theme mode (Dark, Light, System)
+  await AppTheme.loadSavedTheme();
+
   runApp(
     const ProviderScope(
       child: BaatkryApp(),

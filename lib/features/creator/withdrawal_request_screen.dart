@@ -72,6 +72,12 @@ class _WithdrawalRequestScreenState extends ConsumerState<WithdrawalRequestScree
   Future<void> _submitWithdrawal() async {
     setState(() => _errorMessage = null);
 
+    final isCreator = await SupabaseService.instance.checkIsCreator();
+    if (!isCreator) {
+      setState(() => _errorMessage = 'Only approved creators in the Creator Reward Program can request withdrawals.');
+      return;
+    }
+
     final amt = _enteredAmount;
     if (amt < widget.minWithdrawal) {
       setState(() => _errorMessage = 'Minimum payout request is \$${widget.minWithdrawal.toStringAsFixed(2)} USD.');
@@ -124,6 +130,9 @@ class _WithdrawalRequestScreenState extends ConsumerState<WithdrawalRequestScree
 
     if (!mounted) return;
 
+    final fee = (amt * 0.03 * 100).round() / 100.0;
+    final net = amt - fee;
+
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
@@ -139,7 +148,42 @@ class _WithdrawalRequestScreenState extends ConsumerState<WithdrawalRequestScree
               'Request payout of \$${amt.toStringAsFixed(2)} USD to your ${targetAccount!.methodDisplayName} (${targetAccount.maskedAccountNumber})?',
               style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F0F1A),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Gross Amount:', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                      Text('\$${amt.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Platform Fee (3%):', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                      Text('-\$${fee.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const Divider(color: Colors.white12, height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Net Payout:', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      Text('\$${net.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             const Text(
               'Once submitted, the amount is reserved for processing. You may cancel it at any time before administrator approval.',
               style: TextStyle(color: Colors.white60, fontSize: 11),
@@ -170,6 +214,18 @@ class _WithdrawalRequestScreenState extends ConsumerState<WithdrawalRequestScree
       await SupabaseService.instance.requestCreatorWithdrawal(
         payoutAccountId: targetAccount.id,
         amountUsd: amt,
+        feeUsd: fee,
+        payoutMethod: targetAccount.payoutMethod,
+        payoutDetails: {
+          'account_id': targetAccount.id,
+          'method': targetAccount.payoutMethod,
+          'method_display': targetAccount.methodDisplayName,
+          'bank_name': targetAccount.bankName,
+          'account_title': targetAccount.accountTitle,
+          'account_number': targetAccount.accountNumber,
+          'iban': targetAccount.accountNumber,
+          'routing_code': targetAccount.routingCode,
+        },
       );
 
       ref.invalidate(creatorWalletProvider);
@@ -612,7 +668,7 @@ class _WithdrawalRequestScreenState extends ConsumerState<WithdrawalRequestScree
 
   Widget _buildBreakdownCard() {
     final amt = _enteredAmount;
-    const fee = 0.00; // Zero transfer platform fee
+    final fee = (amt * 0.03 * 100).round() / 100.0;
     final net = (amt - fee).clamp(0.0, double.infinity);
 
     return Container(
@@ -635,8 +691,8 @@ class _WithdrawalRequestScreenState extends ConsumerState<WithdrawalRequestScree
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Platform Transfer Fee', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-              Text('\$${fee.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.greenAccent, fontSize: 13)),
+              const Text('Platform Processing Fee (3%)', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              Text('-\$${fee.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.bold)),
             ],
           ),
           const Divider(color: Colors.white12, height: 16),

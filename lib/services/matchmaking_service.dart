@@ -135,7 +135,7 @@ class MatchmakingService {
 
         // Use clientSessionId as the unique presence key
         _channel = client.channel(
-          'monkey_matchmaking_pool',
+          'baatkry_matchmaking_pool',
           opts: RealtimeChannelConfig(
             key: clientSessionId,
           ),

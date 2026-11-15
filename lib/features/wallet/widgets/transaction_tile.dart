@@ -20,6 +20,9 @@ class TransactionTile extends StatelessWidget {
       case LedgerTransactionType.giftSent:
         icon = Icons.card_giftcard_rounded;
         break;
+      case LedgerTransactionType.giftReceived:
+        icon = Icons.redeem_rounded;
+        break;
       case LedgerTransactionType.featureUnlock:
         icon = Icons.lock_open_rounded;
         break;

@@ -1,4 +1,7 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:monkey_omegle_app/features/gift/gift_modal.dart';
 import 'package:monkey_omegle_app/models/user_profile.dart';
 import 'package:monkey_omegle_app/models/virtual_gift.dart';
 import 'package:monkey_omegle_app/models/wallet.dart';
@@ -99,6 +102,61 @@ void main() {
       // Receiver receives 100 coin gift
       final credited = deducted.copyWith(coins: deducted.coins + 100);
       expect(credited.coins, 175);
+    });
+
+    test('Received gift is persisted across page reload / initialization', () async {
+      final initialCoins = SupabaseService.instance.currentProfile?.coins ?? 500;
+
+      // Credit 250 coins from received gift
+      await SupabaseService.instance.creditReceivedGiftCoins(
+        coins: 250,
+        senderId: 'user_bob',
+        senderName: 'Bob',
+        giftName: 'Super Gift',
+      );
+
+      expect(SupabaseService.instance.currentProfile?.coins, initialCoins + 250);
+
+      // Verify transaction appears in fetchWalletLedger
+      final ledger = await SupabaseService.instance.fetchWalletLedger();
+      expect(ledger.any((e) => e.description?.contains('Received Super Gift from Bob') ?? false), isTrue);
+      expect(ledger.firstWhere((e) => e.description?.contains('Received Super Gift') ?? false).amount, 250);
+
+      // Simulate page reload by re-initializing SupabaseService
+      await SupabaseService.instance.initialize();
+
+      // Balance must NOT be lost on reload!
+      expect(SupabaseService.instance.currentProfile?.coins, initialCoins + 250);
+
+      // Ledger must still have the transaction on reload!
+      final reloadedLedger = await SupabaseService.instance.fetchWalletLedger();
+      expect(reloadedLedger.any((e) => e.description?.contains('Received Super Gift from Bob') ?? false), isTrue);
+    });
+
+    testWidgets('GiftModal renders cleanly without overflow on narrow 379.4px mobile screens', (tester) async {
+      tester.view.physicalSize = const Size(379.4, 700.0);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: GiftModal(
+                peerId: 'peer_123',
+                peerName: 'Stranger Jane',
+                roomId: 'room_123',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.textContaining('Send Gift to Stranger Jane'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }

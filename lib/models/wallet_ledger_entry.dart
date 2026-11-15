@@ -1,6 +1,7 @@
 enum LedgerTransactionType {
   purchase,
   giftSent,
+  giftReceived,
   featureUnlock,
   bonus,
   refundDeduct,
@@ -13,6 +14,8 @@ enum LedgerTransactionType {
         return LedgerTransactionType.purchase;
       case 'gift_sent':
         return LedgerTransactionType.giftSent;
+      case 'gift_received':
+        return LedgerTransactionType.giftReceived;
       case 'feature_unlock':
         return LedgerTransactionType.featureUnlock;
       case 'bonus':
@@ -32,6 +35,8 @@ enum LedgerTransactionType {
         return 'Coin Purchase';
       case LedgerTransactionType.giftSent:
         return 'Gift Sent';
+      case LedgerTransactionType.giftReceived:
+        return 'Gift Received';
       case LedgerTransactionType.featureUnlock:
         return 'VIP Feature / Chat';
       case LedgerTransactionType.bonus:
@@ -50,6 +55,7 @@ enum LedgerTransactionType {
       case LedgerTransactionType.purchase:
       case LedgerTransactionType.bonus:
       case LedgerTransactionType.adminAdjustment:
+      case LedgerTransactionType.giftReceived:
         return true;
       case LedgerTransactionType.giftSent:
       case LedgerTransactionType.featureUnlock:

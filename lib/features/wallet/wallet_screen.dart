@@ -8,6 +8,7 @@ import '../admin/admin_dashboard_screen.dart';
 import '../auth/auth_modal.dart';
 import '../creator/creator_status_modal.dart';
 import '../moderation/age_consent_modal.dart';
+import '../shop/widgets/vip_comparison_modal.dart';
 import 'widgets/coin_package_card.dart';
 import 'widgets/transaction_tile.dart';
 
@@ -272,12 +273,25 @@ class _WalletScreenState extends ConsumerState<WalletScreen> with SingleTickerPr
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Available Balance', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                              Row(
+                                children: [
+                                  const Text('Purchased Coins', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white10,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text('Non-withdrawable', style: TextStyle(color: Colors.white60, fontSize: 9)),
+                                  ),
+                                ],
+                              ),
                               Text(
                                 '$coins Coins',
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 24,
+                                  fontSize: 22,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -285,33 +299,108 @@ class _WalletScreenState extends ConsumerState<WalletScreen> with SingleTickerPr
                           ),
                         ],
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: currentProfile?.isVip ?? false
-                              ? AppColors.coinGold.withOpacity(0.2)
-                              : Colors.white10,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
+                      InkWell(
+                        onTap: () => VipComparisonModal.show(context),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
                             color: currentProfile?.isVip ?? false
-                                ? AppColors.coinGold
-                                : Colors.white24,
+                                ? AppColors.coinGold.withOpacity(0.2)
+                                : Colors.white10,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: currentProfile?.isVip ?? false
+                                  ? AppColors.coinGold
+                                  : Colors.white24,
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          currentProfile?.isVip ?? false ? 'VIP MEMBER' : 'FREE TIER',
-                          style: TextStyle(
-                            color: currentProfile?.isVip ?? false
-                                ? AppColors.coinGold
-                                : Colors.white70,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                currentProfile?.isVip ?? false ? 'VIP MEMBER 👑' : 'FREE TIER',
+                                style: TextStyle(
+                                  color: currentProfile?.isVip ?? false
+                                      ? AppColors.coinGold
+                                      : Colors.white70,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.info_outline_rounded,
+                                size: 12,
+                                color: currentProfile?.isVip ?? false ? AppColors.coinGold : Colors.white38,
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
+                  // Withdrawable Gift Earnings Row
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: AppColors.brandPink.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.diamond_rounded, color: AppColors.brandPink, size: 18),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Text('Gift Earnings', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                                  const SizedBox(width: 5),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.success.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text('Withdrawable 💸', style: TextStyle(color: AppColors.success, fontSize: 8, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                isGuest ? '\$0.00' : (ref.watch(creatorWalletStreamProvider).valueOrNull?.formattedAvailable ?? '\$0.00'),
+                                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                        OutlinedButton(
+                          onPressed: isGuest
+                              ? () => AuthModal.show(context)
+                              : () => CreatorStatusModal.show(context),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.brandPink,
+                            side: const BorderSide(color: AppColors.brandPink, width: 1.2),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Text('Cash Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -328,6 +417,35 @@ class _WalletScreenState extends ConsumerState<WalletScreen> with SingleTickerPr
                     ),
                   ),
                 ],
+              ),
+            ),
+
+            // Policy Notice Banner
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.brandIndigo.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.brandIndigo.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shield_outlined, color: AppColors.brandIndigo, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Withdrawal Policy: Purchased coins are exclusively spendable for video calls and sending gifts, and cannot be withdrawn. Only earnings from virtual gifts received from other users are eligible for withdrawal to your bank or PayPal.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.85),
+                          fontSize: 11,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
 

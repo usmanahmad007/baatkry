@@ -102,12 +102,18 @@ class CreatorWithdrawal {
       creatorEmail: map['creator_email'] as String?,
       amountUsd: (map['amount_usd'] as num?)?.toDouble() ?? 0.0,
       feeUsd: (map['fee_usd'] as num?)?.toDouble() ?? 0.0,
-      netAmountUsd: (map['net_amount_usd'] as num?)?.toDouble() ??
-          ((map['amount_usd'] as num?)?.toDouble() ?? 0.0),
-      payoutMethod: map['payout_method'] as String? ?? 'paypal',
+      netAmountUsd: (map['net_payout_amount'] as num?)?.toDouble() ??
+          ((map['net_amount_usd'] as num?)?.toDouble() ??
+              ((map['amount_usd'] as num?)?.toDouble() ?? 0.0)),
+      payoutMethod: map['payout_method'] as String? ??
+          (map['payout_accounts'] != null && map['payout_accounts'] is Map
+              ? (map['payout_accounts']['payout_method'] as String? ?? 'paypal')
+              : 'paypal'),
       payoutDetails: map['payout_details'] is Map
           ? Map<String, dynamic>.from(map['payout_details'] as Map)
-          : {},
+          : (map['payout_accounts'] is Map
+              ? Map<String, dynamic>.from(map['payout_accounts'] as Map)
+              : {}),
       status: map['status'] as String? ?? 'pending',
       adminNotes: map['admin_notes'] as String?,
       payoutTransactionReference: map['payout_transaction_reference'] as String?,

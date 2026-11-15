@@ -74,9 +74,13 @@ class EarningTile extends StatelessWidget {
                     const SizedBox(width: 6),
                     const Text('•', style: TextStyle(color: Colors.white30, fontSize: 10)),
                     const SizedBox(width: 6),
-                    Text(
-                      'Gross: ${entry.formattedGross} (Fee: ${entry.formattedCommission})',
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                    Expanded(
+                      child: Text(
+                        'Gross: ${entry.formattedGross} (Fee: ${entry.formattedCommission})',
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
@@ -84,10 +88,15 @@ class EarningTile extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      '${entry.createdAt.year}-${entry.createdAt.month.toString().padLeft(2, '0')}-${entry.createdAt.day.toString().padLeft(2, '0')} ${entry.createdAt.hour.toString().padLeft(2, '0')}:${entry.createdAt.minute.toString().padLeft(2, '0')}',
-                      style: const TextStyle(color: Colors.white38, fontSize: 10),
+                    Expanded(
+                      child: Text(
+                        '${entry.createdAt.year}-${entry.createdAt.month.toString().padLeft(2, '0')}-${entry.createdAt.day.toString().padLeft(2, '0')} ${entry.createdAt.hour.toString().padLeft(2, '0')}:${entry.createdAt.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(color: Colors.white38, fontSize: 10),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
+                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
