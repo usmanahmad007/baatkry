@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/providers/app_providers.dart';
@@ -80,7 +81,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           _isProfileCompletionModalOpen = true;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (!mounted) return;
-            await CompleteProfileModal.show(context, dismissible: false);
+            final prefs = await SharedPreferences.getInstance();
+            final alreadyCompleted = prefs.getBool('local_profile_completed_${p.id}') ?? false;
+            if (!alreadyCompleted && p.needsProfileCompletion && mounted) {
+              await CompleteProfileModal.show(context, dismissible: false);
+            }
             _isProfileCompletionModalOpen = false;
           });
         }
@@ -120,9 +125,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       // Mandatory profile completion for signed-in users missing username or DOB
       final profile = SupabaseService.instance.currentProfile;
       if (mounted && profile != null && !profile.isAnonymous && profile.needsProfileCompletion && !_isProfileCompletionModalOpen) {
-        _isProfileCompletionModalOpen = true;
-        await CompleteProfileModal.show(context, dismissible: false);
-        _isProfileCompletionModalOpen = false;
+        final prefs = await SharedPreferences.getInstance();
+        final alreadyCompleted = prefs.getBool('local_profile_completed_${profile.id}') ?? false;
+        if (!alreadyCompleted && profile.needsProfileCompletion && mounted) {
+          _isProfileCompletionModalOpen = true;
+          await CompleteProfileModal.show(context, dismissible: false);
+          _isProfileCompletionModalOpen = false;
+        }
       }
     });
 
@@ -205,10 +214,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     // 1. Mandatory Profile Completion Gate: Must have unique username and verified 18+ DOB!
     // User cannot proceed further without completing username and date of birth.
     if (_profile != null && !_profile!.isAnonymous && _profile!.needsProfileCompletion) {
-      if (mounted) {
+      final prefs = await SharedPreferences.getInstance();
+      final alreadyCompleted = prefs.getBool('local_profile_completed_${_profile!.id}') ?? false;
+      if (!alreadyCompleted && mounted) {
         CompleteProfileModal.show(context, dismissible: false);
+        return;
       }
-      return;
     }
 
     // 2. One-time Age & DOB Gate: If DOB not verified yet, prompt for Date of Birth!

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/user_profile.dart';
 import '../../services/supabase_service.dart';
@@ -18,11 +19,18 @@ class CompleteProfileModal extends StatefulWidget {
     BuildContext context, {
     UserProfile? initialProfile,
     bool dismissible = false,
-  }) {
+  }) async {
     final profile = initialProfile ?? SupabaseService.instance.currentProfile;
     if (profile != null && !profile.isAnonymous && !profile.needsProfileCompletion) {
-      return Future.value(true);
+      return true;
     }
+    if (profile != null && !profile.isAnonymous) {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('local_profile_completed_${profile.id}') == true) {
+        return true;
+      }
+    }
+    if (!context.mounted) return false;
     return showDialog<bool>(
       context: context,
       barrierDismissible: dismissible,

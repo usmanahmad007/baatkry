@@ -124,25 +124,36 @@ class SupabaseService {
                   user.email?.split('@').first ??
                   'Google User';
 
+              final savedUsername = remoteProfile?.username ??
+                  prefs.getString('local_user_username_${user.id}') ??
+                  prefs.getString('local_user_username');
+              final savedDob = remoteProfile?.birthDate ??
+                  prefs.getString('local_user_dob_${user.id}') ??
+                  prefs.getString('baatkry_user_dob');
+              final savedAge = remoteProfile?.age ??
+                  prefs.getInt('local_user_age_${user.id}') ??
+                  prefs.getInt('baatkry_user_age') ??
+                  detectedAge;
+              final isCompleted = (prefs.getBool('local_profile_completed_${user.id}') ?? false) ||
+                  (savedUsername != null && savedUsername.isNotEmpty && (savedDob != null || (savedAge != null && savedAge >= 18))) ||
+                  (remoteProfile?.hasCompletedProfile ?? false);
+
               UserProfile profile;
               if (remoteProfile != null) {
-                if ((remoteProfile.avatarUrl == null || remoteProfile.avatarUrl!.isEmpty) &&
-                    googleAvatar != null) {
-                  profile = remoteProfile.copyWith(avatarUrl: googleAvatar);
+                profile = remoteProfile.copyWith(
+                  avatarUrl: (remoteProfile.avatarUrl == null || remoteProfile.avatarUrl!.isEmpty)
+                      ? googleAvatar
+                      : remoteProfile.avatarUrl,
+                  username: savedUsername ?? remoteProfile.username,
+                  birthDate: savedDob ?? remoteProfile.birthDate,
+                  age: savedAge ?? remoteProfile.age,
+                  isAgeVerified: savedDob != null || (savedAge != null && savedAge >= 18) || remoteProfile.isAgeVerified,
+                );
+                if (googleAvatar != null && (remoteProfile.avatarUrl == null || remoteProfile.avatarUrl!.isEmpty)) {
                   try {
                     await _client!.from('profiles').update({'avatar_url': googleAvatar}).eq('id', user.id);
                   } catch (_) {}
-                } else {
-                  profile = remoteProfile;
                 }
-                if (profile.isAgeVerified || profile.birthDate != null || (profile.age != null && profile.age! >= 18)) {
-                  await prefs.setBool('baatkry_age_verified_18_plus', true);
-                  if (profile.birthDate != null) {
-                    await prefs.setString('baatkry_user_dob', profile.birthDate!);
-                  }
-                }
-                await prefs.setInt('local_user_coins_${user.id}', profile.coins);
-                await prefs.setInt('local_user_coins', profile.coins);
               } else {
                 final isFirstTimeUser = !hasUsedBonusOnDevice &&
                     !hasClaimedBonusForEmail &&
@@ -154,10 +165,12 @@ class SupabaseService {
                   id: user.id,
                   isAnonymous: false,
                   nickname: googleName,
+                  username: savedUsername,
+                  birthDate: savedDob,
                   avatarUrl: googleAvatar,
                   coins: initialCoins,
-                  age: detectedAge,
-                  isAgeVerified: detectedAge != null && detectedAge >= 18,
+                  age: savedAge,
+                  isAgeVerified: (savedDob != null) || (savedAge != null && savedAge >= 18),
                 );
 
                 if (isFirstTimeUser) {
@@ -175,6 +188,28 @@ class SupabaseService {
                   await _client!.from('profiles').upsert(profile.toMap());
                 } catch (_) {}
               }
+
+              if (isCompleted) {
+                await prefs.setBool('local_profile_completed_${user.id}', true);
+                if (savedUsername != null && savedUsername.isNotEmpty) {
+                  await prefs.setString('local_user_username_${user.id}', savedUsername);
+                }
+                if (savedDob != null && savedDob.isNotEmpty) {
+                  await prefs.setString('local_user_dob_${user.id}', savedDob);
+                  await prefs.setString('baatkry_user_dob', savedDob);
+                }
+                if (savedAge != null) {
+                  await prefs.setInt('local_user_age_${user.id}', savedAge);
+                  await prefs.setInt('baatkry_user_age', savedAge);
+                }
+              }
+
+              if (profile.isAgeVerified || profile.birthDate != null || (profile.age != null && profile.age! >= 18)) {
+                await prefs.setBool('baatkry_age_verified_18_plus', true);
+              }
+              await prefs.setInt('local_user_coins_${user.id}', profile.coins);
+              await prefs.setInt('local_user_coins', profile.coins);
+
               _currentProfile = profile;
               _profileController.add(_currentProfile);
               await _syncUserWallet(user.id);
@@ -300,6 +335,9 @@ class SupabaseService {
           }
           if (profile.username != null) {
             await prefs.setString('local_user_username_${user.id}', profile.username!);
+          }
+          if (profile.hasCompletedProfile) {
+            await prefs.setBool('local_profile_completed_${user.id}', true);
           }
           if (profile.isGenderSet) {
             await prefs.setString('local_user_gender', profile.gender);
@@ -4003,6 +4041,7 @@ class SupabaseService {
   /// Accept or decline a received friend request (with optional Instagram-style follow-back)
   Future<Map<String, dynamic>> respondToFriendRequest({
     required String requestId,
+    FriendRequest? request,
     required bool accept,
     bool followBack = false,
   }) async {
@@ -4014,39 +4053,94 @@ class SupabaseService {
     final prefs = await SharedPreferences.getInstance();
     final rawRequests = prefs.getStringList('local_friend_requests') ?? [];
     int matchIndex = -1;
-    FriendRequest? targetRequest;
-
-    for (int i = 0; i < rawRequests.length; i++) {
-      final req = FriendRequest.fromMap(jsonDecode(rawRequests[i]) as Map<String, dynamic>);
-      if (req.id == requestId) {
-        matchIndex = i;
-        targetRequest = req;
-        break;
-      }
-    }
+    FriendRequest? targetRequest = request;
 
     if (targetRequest == null) {
-      // If it was a dynamically synthesized sync request e.g. fr_sync_senderId_uid
-      if (requestId.startsWith('fr_sync_')) {
-        final parts = requestId.split('_');
-        if (parts.length >= 4) {
-          final sId = parts[2];
-          final rId = parts[3];
-          targetRequest = FriendRequest(
-            id: requestId,
-            senderId: sId,
-            senderName: 'User',
-            receiverId: rId,
-            receiverName: _currentProfile?.nickname ?? 'User',
-            status: 'pending',
-            createdAt: DateTime.now(),
-          );
-        }
-      }
-      if (targetRequest == null) {
-        throw Exception('Friend request not found.');
+      for (int i = 0; i < rawRequests.length; i++) {
+        try {
+          final req = FriendRequest.fromMap(jsonDecode(rawRequests[i]) as Map<String, dynamic>);
+          if (req.id == requestId) {
+            matchIndex = i;
+            targetRequest = req;
+            break;
+          }
+        } catch (_) {}
       }
     }
+
+    // Fallback 1: Query remote Supabase friend_requests table if exists
+    if (targetRequest == null && _client != null && AppConfig.isSupabaseConfigured) {
+      try {
+        final remoteRow = await _client!.from('friend_requests').select().eq('id', requestId).maybeSingle();
+        if (remoteRow != null) {
+          targetRequest = FriendRequest.fromMap(remoteRow);
+        }
+      } catch (_) {}
+    }
+
+    // Fallback 2: Check synthesized request pattern e.g. fr_sync_senderId_receiverId
+    if (targetRequest == null && requestId.startsWith('fr_sync_')) {
+      final body = requestId.replaceFirst('fr_sync_', '');
+      String sId = '';
+      if (body.endsWith('_$uid')) {
+        sId = body.substring(0, body.length - ('_$uid'.length));
+      } else {
+        final idx = body.lastIndexOf('_');
+        if (idx > 0) sId = body.substring(0, idx);
+      }
+
+      if (sId.isNotEmpty) {
+        String sName = prefs.getString('local_user_nickname_$sId') ?? 'User';
+        String? sAvatar;
+        bool sVip = false;
+
+        final cachedUserJson = prefs.getString('local_user_info_$sId');
+        if (cachedUserJson != null) {
+          try {
+            final m = jsonDecode(cachedUserJson) as Map<String, dynamic>;
+            sName = m['nickname']?.toString() ?? sName;
+            sAvatar = m['avatarUrl']?.toString();
+            sVip = m['isVip'] == true;
+          } catch (_) {}
+        }
+
+        targetRequest = FriendRequest(
+          id: requestId,
+          senderId: sId,
+          senderName: sName,
+          senderAvatar: sAvatar,
+          senderIsVip: sVip,
+          receiverId: uid,
+          receiverName: _currentProfile?.nickname ?? 'User',
+          status: 'pending',
+          createdAt: DateTime.now(),
+        );
+      }
+    }
+
+    // Fallback 3: Search pending requests from fetchFriendRequests()
+    if (targetRequest == null) {
+      try {
+        final pending = await fetchFriendRequests();
+        for (final p in pending) {
+          if (p.id == requestId || p.senderId == requestId) {
+            targetRequest = p;
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Fallback 4: Safe synthesis so accepting never crashes
+    targetRequest ??= FriendRequest(
+      id: requestId,
+      senderId: requestId,
+      senderName: 'User',
+      receiverId: uid,
+      receiverName: _currentProfile?.nickname ?? 'User',
+      status: 'pending',
+      createdAt: DateTime.now(),
+    );
 
     final updatedRequest = targetRequest.copyWith(
       status: accept ? 'accepted' : 'declined',
@@ -4056,12 +4150,19 @@ class SupabaseService {
     if (matchIndex >= 0) {
       rawRequests[matchIndex] = jsonEncode(updatedRequest.toMap());
     } else {
+      rawRequests.removeWhere((r) {
+        try {
+          final m = jsonDecode(r) as Map<String, dynamic>;
+          return m['id'] == requestId || (m['sender_id'] == targetRequest!.senderId && m['receiver_id'] == uid);
+        } catch (_) {
+          return false;
+        }
+      });
       rawRequests.insert(0, jsonEncode(updatedRequest.toMap()));
     }
     await prefs.setStringList('local_friend_requests', rawRequests);
 
     if (accept) {
-      // Instagram follow model:
       // 1. Sender follows receiver
       final senderFollowing = prefs.getStringList('local_following_${targetRequest.senderId}') ?? [];
       if (!senderFollowing.contains(targetRequest.receiverId)) {
@@ -4090,7 +4191,7 @@ class SupabaseService {
         }
       }
 
-      // Add each other to connections list so they can chat, video call, and gift
+      // Add each other to mutual connections list
       final senderFriends = prefs.getStringList('local_friends_${targetRequest.senderId}') ?? [];
       if (!senderFriends.contains(targetRequest.receiverId)) {
         senderFriends.add(targetRequest.receiverId);
@@ -4125,30 +4226,54 @@ class SupabaseService {
             .from('friend_requests')
             .update({'status': accept ? 'accepted' : 'declined', 'updated_at': DateTime.now().toIso8601String()})
             .eq('id', requestId);
+      } catch (e) {
+        debugPrint('[SupabaseService] friend_requests update note: $e');
+      }
 
-        if (accept) {
+      if (accept) {
+        try {
           await _client!.from('friends').upsert({
             'user_id_1': targetRequest.senderId,
             'user_id_2': targetRequest.receiverId,
             'created_at': DateTime.now().toIso8601String(),
           });
+        } catch (e) {
+          debugPrint('[SupabaseService] friends upsert note: $e');
+        }
 
-          if (followBack) {
+        if (followBack) {
+          try {
             await _client!.from('user_follows').upsert({
               'follower_id': targetRequest.receiverId,
               'following_id': targetRequest.senderId,
             });
-            // Update interests for followBack
-            final currentInterests = List<String>.from(_currentProfile?.interests ?? []);
-            if (!currentInterests.contains('follow:${targetRequest.senderId}')) {
-              currentInterests.add('follow:${targetRequest.senderId}');
-              _currentProfile = _currentProfile?.copyWith(interests: currentInterests);
-              await _client!.from('profiles').update({'interests': currentInterests}).eq('id', uid);
-            }
+          } catch (e) {
+            debugPrint('[SupabaseService] user_follows upsert note: $e');
           }
         }
-      } catch (e) {
-        debugPrint('[SupabaseService] respondToFriendRequest remote note: $e');
+
+        // Cross-account metadata sync into profiles.interests:
+        try {
+          final currentInterests = List<String>.from(_currentProfile?.interests ?? []);
+          bool changed = false;
+
+          if (!currentInterests.contains('friend:${targetRequest.senderId}')) {
+            currentInterests.add('friend:${targetRequest.senderId}');
+            changed = true;
+          }
+
+          if (followBack && !currentInterests.contains('follow:${targetRequest.senderId}')) {
+            currentInterests.add('follow:${targetRequest.senderId}');
+            changed = true;
+          }
+
+          if (changed) {
+            _currentProfile = _currentProfile?.copyWith(interests: currentInterests);
+            await _client!.from('profiles').update({'interests': currentInterests}).eq('id', uid);
+          }
+        } catch (e) {
+          debugPrint('[SupabaseService] accept interests update note: $e');
+        }
       }
     }
 
@@ -4304,10 +4429,14 @@ class SupabaseService {
               await prefs.setStringList('local_followers_$uid', myFollowers);
             }
 
-            final isAlreadyConnected = alreadyFriends.contains(senderId) || alreadyFollowed.contains(senderId);
+            final myInterests = _currentProfile?.interests ?? [];
+            final isAlreadyConnected = alreadyFriends.contains(senderId) ||
+                alreadyFollowed.contains(senderId) ||
+                myInterests.contains('friend:$senderId');
+            if (isAlreadyConnected) continue;
             final reqKey = 'fr_sync_${senderId}_$uid';
 
-            if (!isAlreadyConnected && !requestMap.values.any((r) => r.senderId == senderId && r.isPending)) {
+            if (!requestMap.values.any((r) => r.senderId == senderId && r.isPending)) {
               final senderNick = item['nickname']?.toString() ?? 'User';
               final senderAv = item['avatar_url']?.toString();
               final senderVip = item['is_vip'] == true;
@@ -4333,6 +4462,24 @@ class SupabaseService {
 
     final result = requestMap.values.where((r) => r.isPending && !_blockedUserIds.contains(r.senderId)).toList();
     result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    // Cache updated incoming requests locally without overwriting existing records
+    try {
+      final existingRaw = prefs.getStringList('local_friend_requests') ?? [];
+      final Map<String, String> merged = {};
+      for (final raw in existingRaw) {
+        try {
+          final m = jsonDecode(raw) as Map<String, dynamic>;
+          final id = m['id']?.toString() ?? '';
+          if (id.isNotEmpty) merged[id] = raw;
+        } catch (_) {}
+      }
+      for (final req in requestMap.values) {
+        merged[req.id] = jsonEncode(req.toMap());
+      }
+      await prefs.setStringList('local_friend_requests', merged.values.toList());
+    } catch (_) {}
+
     return result;
   }
 
@@ -4395,6 +4542,8 @@ class SupabaseService {
           for (final item in ints) {
             if (item.startsWith('follow:')) {
               friendIdSet.add(item.replaceFirst('follow:', ''));
+            } else if (item.startsWith('friend:')) {
+              friendIdSet.add(item.replaceFirst('friend:', ''));
             }
           }
         }

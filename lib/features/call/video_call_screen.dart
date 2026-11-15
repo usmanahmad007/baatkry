@@ -1296,7 +1296,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
               final requests = await SupabaseService.instance.fetchFriendRequests();
               final matching = requests.where((r) => r.senderId == _activeMatchResult.peerId).toList();
               if (matching.isNotEmpty) {
-                await SupabaseService.instance.respondToFriendRequest(requestId: matching.first.id, accept: true);
+                await SupabaseService.instance.respondToFriendRequest(
+                  requestId: matching.first.id,
+                  request: matching.first,
+                  accept: true,
+                );
                 if (mounted) {
                   setState(() => _friendStatus = 'friends');
                 }

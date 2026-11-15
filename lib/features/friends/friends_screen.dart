@@ -145,6 +145,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
     try {
       await SupabaseService.instance.respondToFriendRequest(
         requestId: request.id,
+        request: request,
         accept: accept,
         followBack: followBack,
       );

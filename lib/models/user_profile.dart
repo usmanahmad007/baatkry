@@ -43,8 +43,12 @@ class UserProfile {
 
   bool get isGenderSet => gender != 'unspecified' && gender.isNotEmpty;
   bool get hasUsername => username != null && username!.trim().isNotEmpty;
-  bool get hasDob => birthDate != null && birthDate!.trim().isNotEmpty;
-  bool get needsProfileCompletion => !isAnonymous && (!hasUsername || !hasDob);
+  bool get hasDob => (birthDate != null && birthDate!.trim().isNotEmpty) || (age != null && age! >= 18);
+  bool get hasCompletedProfile =>
+      (hasUsername && hasDob) ||
+      interests.contains('profile_completed') ||
+      (interests.any((t) => t.startsWith('uname:')) && (interests.any((t) => t.startsWith('dob:')) || (age != null && age! >= 18)));
+  bool get needsProfileCompletion => !isAnonymous && !hasCompletedProfile;
 
   /// Daily Free Coins rewards schedule: Day 1: 50, Day 2: 100 ... Day 7: 350
   static const List<int> dailyRewards = [50, 100, 150, 200, 250, 300, 350];
@@ -228,25 +232,6 @@ class UserProfile {
   }
 
   factory UserProfile.fromMap(Map<String, dynamic> map) {
-    final rawDob = (map['birth_date'] ?? map['date_of_birth'])?.toString();
-    final rawAge = map['age'] as int?;
-    final verified = map['is_age_verified'] as bool? ??
-        (rawDob != null || (rawAge != null && rawAge >= 18));
-
-    final rawVipExpiry = map['vip_expires_at'] != null
-        ? DateTime.tryParse(map['vip_expires_at'].toString())
-        : null;
-    final rawIsVip = map['is_vip'] as bool? ?? false;
-    final isVipEffective = rawIsVip && (rawVipExpiry == null || DateTime.now().isBefore(rawVipExpiry));
-
-    final rawUsernameUpdatedAt = map['username_updated_at'] != null
-        ? DateTime.tryParse(map['username_updated_at'].toString())
-        : null;
-    final rawDailyClaimAt = map['last_daily_claim_at'] != null
-        ? DateTime.tryParse(map['last_daily_claim_at'].toString())
-        : null;
-    final rawDailyStreak = map['daily_claim_streak'] as int? ?? 0;
-
     final rawInterests = (map['interests'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
@@ -261,6 +246,43 @@ class UserProfile {
         }
       }
     }
+
+    String? resolvedDob = (map['birth_date'] ?? map['date_of_birth'])?.toString();
+    if (resolvedDob == null || resolvedDob.isEmpty) {
+      for (final tag in rawInterests) {
+        if (tag.startsWith('dob:')) {
+          resolvedDob = tag.replaceFirst('dob:', '');
+          break;
+        }
+      }
+    }
+
+    int? resolvedAge = map['age'] as int?;
+    if (resolvedAge == null) {
+      for (final tag in rawInterests) {
+        if (tag.startsWith('age:')) {
+          resolvedAge = int.tryParse(tag.replaceFirst('age:', ''));
+          break;
+        }
+      }
+    }
+
+    final verified = map['is_age_verified'] as bool? ??
+        (resolvedDob != null || (resolvedAge != null && resolvedAge >= 18) || rawInterests.contains('profile_completed'));
+
+    final rawVipExpiry = map['vip_expires_at'] != null
+        ? DateTime.tryParse(map['vip_expires_at'].toString())
+        : null;
+    final rawIsVip = map['is_vip'] as bool? ?? false;
+    final isVipEffective = rawIsVip && (rawVipExpiry == null || DateTime.now().isBefore(rawVipExpiry));
+
+    final rawUsernameUpdatedAt = map['username_updated_at'] != null
+        ? DateTime.tryParse(map['username_updated_at'].toString())
+        : null;
+    final rawDailyClaimAt = map['last_daily_claim_at'] != null
+        ? DateTime.tryParse(map['last_daily_claim_at'].toString())
+        : null;
+    final rawDailyStreak = map['daily_claim_streak'] as int? ?? 0;
 
     return UserProfile(
       id: map['id'] as String? ?? '',
@@ -278,9 +300,9 @@ class UserProfile {
       isVip: isVipEffective,
       vipExpiresAt: rawVipExpiry,
       status: map['status'] as String? ?? 'online',
-      age: rawAge,
+      age: resolvedAge,
       isAgeVerified: verified,
-      birthDate: rawDob,
+      birthDate: resolvedDob,
       country: map['country'] as String? ?? 'Global (Worldwide)',
       countryCode: map['country_code'] as String? ?? 'ALL',
       dailyClaimStreak: rawDailyStreak,
