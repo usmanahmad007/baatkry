@@ -1057,9 +1057,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     return Scaffold(
       key: _scaffoldKey,
       endDrawer: const MyProfileDrawer(),
-      backgroundColor: isMobile
-          ? (isDark ? const Color(0xFF070B14) : const Color(0xFFF1F5F9))
-          : const Color(0xFF6C47FF),
+      backgroundColor: const Color(0xFF070913),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -1068,24 +1066,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             child: FullScreenLiveUsersMapBackground(),
           ),
 
-          // 2. Translucent Ambient Overlay ensuring high foreground readability
+          // 2. Modern Dark Multi-stop Gradient Ambient Overlay
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: isDark
-                      ? [
-                          Colors.black.withOpacity(0.50),
-                          Colors.black.withOpacity(0.35),
-                          Colors.black.withOpacity(0.65),
-                        ]
-                      : [
-                          Colors.white.withOpacity(0.70),
-                          Colors.white.withOpacity(0.50),
-                          Colors.white.withOpacity(0.78),
-                        ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF060814).withOpacity(0.92),
+                    const Color(0xFF0B1026).withOpacity(0.86),
+                    const Color(0xFF140D2B).withOpacity(0.88),
+                    const Color(0xFF05070F).withOpacity(0.96),
+                  ],
+                  stops: const [0.0, 0.35, 0.70, 1.0],
                 ),
               ),
             ),
@@ -1152,13 +1146,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       margin: const EdgeInsets.fromLTRB(28, 0, 28, 12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF141935).withOpacity(0.92),
+            const Color(0xFF0F1226).withOpacity(0.95),
+          ],
+        ),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.12),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -1167,10 +1167,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.black87,
+              color: Colors.white12,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: const Text('Ad', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+            child: const Text('Ad', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(width: 10),
           const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFFD700), size: 22),
@@ -1184,11 +1184,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 children: [
                   Text(
                     'Enjoy with Baatkry Plus',
-                    style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                   Text(
                     'Select your preference to meet people you like',
-                    style: TextStyle(color: Colors.black54, fontSize: 11),
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
                   ),
                 ],
               ),
@@ -1198,7 +1198,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           const SizedBox(width: 10),
           InkWell(
             onTap: () => setState(() => _showBottomAdBanner = false),
-            child: const Icon(Icons.close_rounded, color: Colors.black45, size: 18),
+            child: const Icon(Icons.close_rounded, color: Colors.white60, size: 18),
           ),
         ],
       ),
@@ -1506,17 +1506,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   Widget _buildWebControlsHub(bool isGuest, bool isDark) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF6542ED) : const Color(0xFF7551FF),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF141938),
+            Color(0xFF0F1329),
+            Color(0xFF1A1435),
+          ],
+        ),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: Colors.white.withOpacity(0.18),
+          color: const Color(0xFF8B5CF6).withOpacity(0.35),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF7551FF).withOpacity(0.35),
+            color: const Color(0xFF8B5CF6).withOpacity(0.22),
             blurRadius: 28,
             offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -1588,11 +1601,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   width: 280,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: const Color(0xFF1B203D),
                     borderRadius: BorderRadius.circular(25),
+                    border: Border.all(
+                      color: const Color(0xFF8B5CF6).withOpacity(0.4),
+                      width: 1.2,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
+                        color: Colors.black.withOpacity(0.25),
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -1606,13 +1623,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             ? '👩 Girls Only'
                             : (_selectedGenderFilter == 'male' ? '👨 Guys Only' : '👫 Both'),
                         style: const TextStyle(
-                          color: Colors.black87,
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.black54, size: 20),
+                      const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 20),
                     ],
                   ),
                 ),
@@ -1620,23 +1637,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ),
             const SizedBox(height: 14),
 
-            // 4. Yellow Start Video Chat Button (Matches Reference UI)
+            // 4. Radiant Gradient Start Video Chat Button
             Center(
-              child: SizedBox(
+              child: Container(
                 width: 280,
-                height: 50,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFFFF2A85),
+                      Color(0xFF8B5CF6),
+                      Color(0xFF4F46E5),
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(26),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF2A85).withOpacity(0.45),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFEB3B),
-                    foregroundColor: Colors.black,
-                    elevation: 4,
-                    shadowColor: Colors.black.withOpacity(0.3),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
                   ),
                   onPressed: _onStartMatching,
-                  child: const Text(
-                    'START VIDEO CHAT',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  child: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.video_call_rounded, size: 22, color: Colors.white),
+                        SizedBox(width: 6),
+                        Text(
+                          'START VIDEO CHAT',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2816,17 +2868,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       decoration: BoxDecoration(
-        color: (isDark ? const Color(0xFF0F172A) : Colors.white).withOpacity(0.95),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF0C1022).withOpacity(0.96),
+            const Color(0xFF060812).withOpacity(0.98),
+          ],
+        ),
         border: Border(
           top: BorderSide(
-            color: (isDark ? Colors.white : Colors.black).withOpacity(0.08),
+            color: const Color(0xFF8B5CF6).withOpacity(0.25),
+            width: 1.2,
           ),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -3),
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
@@ -2837,13 +2897,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             height: 52,
             width: double.infinity,
             decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFFFF2A85),
+                  Color(0xFF8B5CF6),
+                  Color(0xFF4F46E5),
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.brandPink.withOpacity(0.35),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+                  color: const Color(0xFFFF2A85).withOpacity(0.40),
+                  blurRadius: 18,
+                  offset: const Offset(0, 5),
                 ),
               ],
             ),
@@ -2877,10 +2945,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             isGuest
                 ? '⏳ 3 minutes free trial (30s per person) • Sign in for unlimited'
                 : '✨ 100% Free Unlimited Video Chat • Authentic Live Users',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+              color: Colors.white70,
             ),
             textAlign: TextAlign.center,
           ),
